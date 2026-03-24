@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 14% 96%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+    --primary: 142 60% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 90%;
+    --secondary-foreground: 220 20% 10%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 200 80% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 88%;
+    --input: 220 14% 88%;
+    --ring: 142 60% 45%;
+    --radius: 0.5rem;
+    --panel: 220 14% 98%;
+    --panel-foreground: 220 20% 10%;
+    --surface: 220 14% 94%;
+    --surface-foreground: 220 20% 10%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 200 80% 55%;
+    --info-foreground: 0 0% 100%;
+    --severity-high: 0 72% 55%;
+    --severity-medium: 38 92% 50%;
+    --severity-low: 200 80% 55%;
+    --editor-bg: 220 14% 98%;
+    --sidebar-bg: 0 0% 100%;
+    --navbar-bg: 0 0% 100%;
+    --navbar-border: 220 14% 88%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 10%;
+    --sidebar-primary: 142 60% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 94%;
+    --sidebar-accent-foreground: 220 20% 10%;
+    --sidebar-border: 220 14% 88%;
+    --sidebar-ring: 142 60% 45%;
+  }
+
+  .dark {
+    --background: 220 18% 8%;
+    --foreground: 220 14% 90%;
+    --card: 220 18% 12%;
+    --card-foreground: 220 14% 90%;
+    --popover: 220 18% 12%;
+    --popover-foreground: 220 14% 90%;
+    --primary: 142 60% 50%;
+    --primary-foreground: 220 18% 8%;
+    --secondary: 220 18% 16%;
+    --secondary-foreground: 220 14% 90%;
+    --muted: 220 18% 16%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 200 80% 55%;
+    --accent-foreground: 220 18% 8%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 220 14% 90%;
+    --border: 220 18% 18%;
+    --input: 220 18% 18%;
+    --ring: 142 60% 50%;
+    --panel: 220 18% 10%;
+    --panel-foreground: 220 14% 90%;
+    --surface: 220 18% 14%;
+    --surface-foreground: 220 14% 90%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 18% 8%;
+    --info: 200 80% 55%;
+    --info-foreground: 220 18% 8%;
+    --severity-high: 0 72% 55%;
+    --severity-medium: 38 92% 50%;
+    --severity-low: 200 80% 55%;
+    --editor-bg: 220 18% 10%;
+    --sidebar-bg: 220 18% 10%;
+    --navbar-bg: 220 18% 10%;
+    --navbar-border: 220 18% 18%;
+    --sidebar-background: 220 18% 10%;
+    --sidebar-foreground: 220 14% 90%;
+    --sidebar-primary: 142 60% 50%;
+    --sidebar-primary-foreground: 220 18% 8%;
+    --sidebar-accent: 220 18% 14%;
+    --sidebar-accent-foreground: 220 14% 90%;
+    --sidebar-border: 220 18% 18%;
+    --sidebar-ring: 142 60% 50%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-card/80 backdrop-blur-sm border border-border rounded-lg;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.15), 0 0 60px hsl(var(--primary) / 0.05);
+  }
+
+  .stat-card {
+    @apply bg-card border border-border rounded-xl p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-lg;
+  }
+
+  .severity-high {
+    @apply bg-destructive/10 text-destructive border-destructive/20;
+  }
+
+  .severity-medium {
+    @apply bg-warning/10 text-warning border-warning/20;
+  }
+
+  .severity-low {
+    @apply bg-info/10 text-info border-info/20;
+  }
+
+  .workspace-panel {
+    @apply bg-panel border border-border;
+  }
+}
+
+@layer utilities {
+  .text-gradient-primary {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+}

@@ -11,6 +11,7 @@ import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Workspace from "./pages/Workspace";
 import NotFound from "./pages/NotFound";
+import ProtectedRoute from "@/components/layout/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -26,8 +27,22 @@ const App = () => (
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/workspace/:roomId" element={<Workspace />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/workspace/:roomId"
+                element={
+                  <ProtectedRoute>
+                    <Workspace />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

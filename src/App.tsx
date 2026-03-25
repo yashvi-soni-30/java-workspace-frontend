@@ -36,6 +36,14 @@ const App = () => (
                 }
               />
               <Route
+                path="/workspace"
+                element={
+                  <ProtectedRoute>
+                    <Workspace />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/workspace/:roomId"
                 element={
                   <ProtectedRoute>

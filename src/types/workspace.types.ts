@@ -23,3 +23,28 @@ export interface RoomFile {
   updatedAt: string;
   updatedByEmail: string | null;
 }
+
+export interface RoomFileContent extends RoomFile {
+  content: string;
+}
+
+export interface VersionEntry {
+  id: number;
+  versionNumber: number;
+  createdAt: string;
+  authorName: string | null;
+  authorEmail: string | null;
+  fileId: number;
+  contentPreview: string;
+  message?: string;
+}
+
+export interface VersionRevertResult {
+  fileId: number;
+  filePath: string;
+  content: string;
+  revertedFromVersion: number;
+  newVersion: number;
+  updatedAt: string;
+  updatedByEmail: string | null;
+}

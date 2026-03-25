@@ -1,6 +1,6 @@
 import { Activity, Clock, Gauge, AlertTriangle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import type { WorkspaceAnalysis } from "@/lib/javaAnalysisApi";
+import type { WorkspaceAnalysis } from "@/api/analysisApi";
 
 interface AnalysisPanelProps {
   result: WorkspaceAnalysis;

@@ -1,10 +1,19 @@
 import { AlertCircle, AlertTriangle, Info } from "lucide-react";
-import type { WorkspaceIssue } from "@/lib/javaAnalysisApi";
+import type { WorkspaceIssue } from "@/api/analysisApi";
 
 const severityConfig = {
   high: { icon: AlertCircle, classes: "severity-high", label: "High" },
   medium: { icon: AlertTriangle, classes: "severity-medium", label: "Medium" },
   low: { icon: Info, classes: "severity-low", label: "Low" },
+};
+
+const issueTypeLabel: Record<WorkspaceIssue["type"], string> = {
+  COMPILER_ERROR: "Compiler",
+  WARNING: "Warning",
+  PERFORMANCE: "Performance",
+  MAINTAINABILITY: "Maintainability",
+  SECURITY: "Security",
+  STYLE: "Style",
 };
 
 interface IssuesPanelProps {
@@ -27,9 +36,14 @@ const IssuesPanel = ({ issues }: IssuesPanelProps) => {
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="text-xs font-semibold text-foreground">{issue.title}</span>
               </div>
-              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${config.classes}`}>
-                {config.label}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-border text-muted-foreground bg-background/40">
+                  {issueTypeLabel[issue.type]}
+                </span>
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${config.classes}`}>
+                  {config.label}
+                </span>
+              </div>
             </div>
             <p className="text-[11px] text-muted-foreground font-mono">Line {issue.line}</p>
             <p className="text-[11px] text-muted-foreground">{issue.explanation}</p>

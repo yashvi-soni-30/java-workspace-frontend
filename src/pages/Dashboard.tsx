@@ -88,9 +88,16 @@ const Dashboard = () => {
             <h1 className="text-2xl font-bold text-foreground">Welcome, {user.name}</h1>
             <p className="text-sm text-muted-foreground">Create, join, and manage your team rooms</p>
           </div>
-          <Button size="sm" className="gap-1.5" onClick={handleCreateRoom} disabled={saving || !newRoomName.trim()}>
-            <Plus className="h-3.5 w-3.5" /> New Workspace
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to="/workspace">
+              <Button variant="outline" size="sm" className="gap-1.5">
+                Solo Workspace
+              </Button>
+            </Link>
+            <Button size="sm" className="gap-1.5" onClick={handleCreateRoom} disabled={saving || !newRoomName.trim()}>
+              <Plus className="h-3.5 w-3.5" /> New Workspace
+            </Button>
+          </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-3 mb-6 animate-slide-up" style={{ animationDelay: "60ms" }}>

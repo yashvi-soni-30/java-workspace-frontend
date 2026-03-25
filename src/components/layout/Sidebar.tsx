@@ -1,19 +1,25 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { versionHistory as mockVersions } from "@/data/mockData";
-import { GitBranch, Save, RotateCcw, Hash } from "lucide-react";
-import type { RoomFile, RoomMember } from "@/types/workspace.types";
+import { Save, Hash } from "lucide-react";
+import type { RoomFile, RoomMember, VersionEntry } from "@/types/workspace.types";
+import VersionHistory from "@/components/workspace/VersionHistory";
 
 interface SidebarProps {
   roomCode: string;
   roomName: string;
   roomMembers: RoomMember[];
   roomFiles: RoomFile[];
+  versions: VersionEntry[];
+  loadingVersions?: boolean;
+  activeFileId?: number | null;
   canManageMembers: boolean;
-  onSaveVersion: () => void;
+  onSaveVersion: () => Promise<void>;
   onJoinRoom: (roomCode: string) => Promise<void>;
   onAddMember: (email: string) => Promise<void>;
+  onSelectFile: (fileId: number) => Promise<void>;
+  onCreateFile: (filePath: string) => Promise<void>;
+  onRevertVersion: (versionId: number) => Promise<void>;
 }
 
 const Sidebar = ({
@@ -21,13 +27,20 @@ const Sidebar = ({
   roomName,
   roomMembers,
   roomFiles,
+  versions,
+  loadingVersions = false,
+  activeFileId,
   canManageMembers,
   onSaveVersion,
   onJoinRoom,
   onAddMember,
+  onSelectFile,
+  onCreateFile,
+  onRevertVersion,
 }: SidebarProps) => {
   const [joinRoom, setJoinRoom] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [newFileName, setNewFileName] = useState("");
 
   const handleJoin = async () => {
     if (!joinRoom.trim()) {
@@ -43,6 +56,14 @@ const Sidebar = ({
     }
     await onAddMember(inviteEmail.trim());
     setInviteEmail("");
+  };
+
+  const handleCreateFile = async () => {
+    if (!newFileName.trim()) {
+      return;
+    }
+    await onCreateFile(newFileName.trim());
+    setNewFileName("");
   };
 
   return (
@@ -91,12 +112,28 @@ const Sidebar = ({
 
       <div className="p-3 border-b border-border">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active Files</h3>
+        <div className="flex gap-1.5 mb-2">
+          <Input
+            placeholder="New file, e.g. Utils.java"
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            className="h-7 text-xs bg-surface border-border"
+          />
+          <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleCreateFile}>New</Button>
+        </div>
         <div className="space-y-1.5 max-h-24 overflow-y-auto">
           {roomFiles.length === 0 && <p className="text-[11px] text-muted-foreground">No files yet</p>}
           {roomFiles.map((file) => (
-            <div key={file.id} className="text-[11px] text-foreground truncate">
+            <button
+              key={file.id}
+              className={`w-full text-left text-[11px] truncate rounded px-1 py-0.5 transition-colors ${
+                activeFileId === file.id ? "bg-primary/15 text-primary" : "text-foreground hover:bg-surface"
+              }`}
+              onClick={() => void onSelectFile(file.id)}
+              type="button"
+            >
               {file.filePath}
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -112,23 +149,7 @@ const Sidebar = ({
       {/* Version History */}
       <div className="flex-1 overflow-y-auto p-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">History</h3>
-        <div className="space-y-2">
-          {mockVersions.map((v) => (
-            <div key={v.id} className="bg-surface rounded-md p-2 group">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1">
-                  <GitBranch className="h-3 w-3 text-primary" />
-                  <span className="text-xs font-semibold text-foreground">v{v.version}</span>
-                </div>
-                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                  <RotateCcw className="h-2.5 w-2.5 mr-0.5" /> Revert
-                </Button>
-              </div>
-              <p className="text-[11px] text-muted-foreground truncate">{v.message}</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">{v.author} • {new Date(v.timestamp).toLocaleTimeString()}</p>
-            </div>
-          ))}
-        </div>
+        <VersionHistory versions={versions} loading={loadingVersions} onRevert={onRevertVersion} />
       </div>
     </aside>
   );

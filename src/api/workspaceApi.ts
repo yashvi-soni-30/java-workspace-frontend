@@ -1,4 +1,4 @@
-import type { RoomFile, RoomMember, RoomSummary } from "@/types/workspace.types";
+import type { RoomFile, RoomFileContent, RoomMember, RoomSummary, VersionEntry, VersionRevertResult } from "@/types/workspace.types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const TOKEN_KEY = "cjw-token";
@@ -7,6 +7,10 @@ interface WorkspaceRequestPayload {
   roomName?: string;
   roomCode?: string;
   memberEmail?: string;
+  filePath?: string;
+  language?: string;
+  content?: string;
+  versionMessage?: string;
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -21,12 +25,17 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-function authHeaders(): HeadersInit {
+function getAuthToken(): string {
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) {
     throw new Error("You are not logged in");
   }
 
+  return token;
+}
+
+function authHeaders(): HeadersInit {
+  const token = getAuthToken();
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
@@ -35,7 +44,7 @@ function authHeaders(): HeadersInit {
 
 async function workspaceRequest<T>(
   path: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   payload?: WorkspaceRequestPayload
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -73,4 +82,78 @@ export function addRoomMember(roomId: number, memberEmail: string): Promise<Room
 
 export function getRoomFiles(roomId: number): Promise<RoomFile[]> {
   return workspaceRequest<RoomFile[]>(`/api/workspaces/rooms/${roomId}/files`, "GET");
+}
+
+export function getRoomFile(roomId: number, fileId: number): Promise<RoomFileContent> {
+  return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files/${fileId}`, "GET");
+}
+
+export function createRoomFile(roomId: number, filePath: string, content = ""): Promise<RoomFileContent> {
+  return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files`, "POST", { filePath, content, language: "java" });
+}
+
+export function saveRoomFile(roomId: number, fileId: number, content: string, filePath?: string): Promise<RoomFileContent> {
+  return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files/${fileId}`, "PUT", { content, filePath, language: "java" });
+}
+
+export async function uploadRoomJavaFile(roomId: number, file: File): Promise<RoomFileContent> {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/api/workspaces/rooms/${roomId}/files/upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  return parseResponse<RoomFileContent>(response);
+}
+
+export async function downloadRoomFile(roomId: number, fileId: number): Promise<{ blob: Blob; fileName: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/workspaces/rooms/${roomId}/files/${fileId}/download`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+    throw new Error(data?.error || data?.message || "Download failed");
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+  const fileName = match?.[1] || "code.java";
+
+  return { blob, fileName };
+}
+
+export function saveVersionSnapshot(
+  roomId: number,
+  fileId: number,
+  content: string,
+  versionMessage?: string
+): Promise<VersionEntry> {
+  return workspaceRequest<VersionEntry>(`/api/workspaces/rooms/${roomId}/files/${fileId}/versions`, "POST", {
+    content,
+    versionMessage,
+  });
+}
+
+export function getFileVersions(roomId: number, fileId: number): Promise<VersionEntry[]> {
+  return workspaceRequest<VersionEntry[]>(`/api/workspaces/rooms/${roomId}/files/${fileId}/versions`, "GET");
+}
+
+export function revertFileVersion(roomId: number, fileId: number, versionId: number): Promise<VersionRevertResult> {
+  return workspaceRequest<VersionRevertResult>(
+    `/api/workspaces/rooms/${roomId}/files/${fileId}/versions/${versionId}/revert`,
+    "POST"
+  );
 }

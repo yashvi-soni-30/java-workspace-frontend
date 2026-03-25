@@ -1,10 +1,11 @@
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import { useTheme } from "@/hooks/useTheme";
-import type { WorkspaceIssue } from "@/lib/javaAnalysisApi";
+import type { WorkspaceIssue } from "@/api/analysisApi";
 import { useEffect, useRef } from "react";
 
 interface EditorPanelProps {
   code: string;
+  fileName?: string;
   onChange: (value: string) => void;
   issues?: WorkspaceIssue[];
 }
@@ -15,7 +16,7 @@ const markerSeverity = {
   low: 2,
 } as const;
 
-const EditorPanel = ({ code, onChange, issues = [] }: EditorPanelProps) => {
+const EditorPanel = ({ code, fileName = "DataProcessor.java", onChange, issues = [] }: EditorPanelProps) => {
   const { theme } = useTheme();
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -56,7 +57,7 @@ const EditorPanel = ({ code, onChange, issues = [] }: EditorPanelProps) => {
           <div className="w-2.5 h-2.5 rounded-full bg-warning/60" />
           <div className="w-2.5 h-2.5 rounded-full bg-primary/60" />
         </div>
-        <span className="text-xs text-muted-foreground font-mono ml-2">DataProcessor.java</span>
+        <span className="text-xs text-muted-foreground font-mono ml-2">{fileName}</span>
       </div>
       <div className="flex-1">
         <Editor

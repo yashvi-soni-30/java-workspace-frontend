@@ -12,23 +12,42 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, Upload, Zap, Hash, Users } from "lucide-react";
 import { toast } from "sonner";
-import { analyzeJavaWorkspace } from "@/lib/javaAnalysisApi";
-import { addRoomMember, getRoomByCode, getRoomFiles, getRoomMembers, joinRoom } from "@/api/workspaceApi";
-import type { RoomFile, RoomMember, RoomSummary } from "@/types/workspace.types";
+import { analyzeJavaWorkspace } from "@/api/analysisApi";
+import type { WorkspaceAnalysis, WorkspaceIssue } from "@/api/analysisApi";
+import {
+  addRoomMember,
+  createRoomFile,
+  downloadRoomFile,
+  getFileVersions,
+  getRoomByCode,
+  getRoomFile,
+  getRoomFiles,
+  getRoomMembers,
+  joinRoom,
+  revertFileVersion,
+  saveVersionSnapshot,
+  uploadRoomJavaFile,
+} from "@/api/workspaceApi";
+import type { RoomFile, RoomMember, RoomSummary, VersionEntry } from "@/types/workspace.types";
 import { useAuth } from "@/hooks/useAuth";
 
 const Workspace = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { roomId } = useParams();
+  const isStandalone = !roomId;
   const [code, setCode] = useState(defaultJavaCode);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState(analysisResults);
-  const [issues, setIssues] = useState(issuesList);
+  const [analysis, setAnalysis] = useState<WorkspaceAnalysis>(analysisResults as WorkspaceAnalysis);
+  const [issues, setIssues] = useState<WorkspaceIssue[]>(issuesList as WorkspaceIssue[]);
   const [backendAvailable, setBackendAvailable] = useState(true);
   const [room, setRoom] = useState<RoomSummary | null>(null);
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
   const [roomFiles, setRoomFiles] = useState<RoomFile[]>([]);
+  const [versions, setVersions] = useState<VersionEntry[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [activeFileId, setActiveFileId] = useState<number | null>(null);
+  const [activeFileName, setActiveFileName] = useState("DataProcessor.java");
   const [loadingRoom, setLoadingRoom] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -47,6 +66,20 @@ const Workspace = () => {
       setRoom(roomDetails);
       setRoomMembers(members);
       setRoomFiles(files);
+
+      if (files.length > 0) {
+        const firstFile = await getRoomFile(roomDetails.id, files[0].id);
+        const history = await getFileVersions(roomDetails.id, files[0].id);
+        setActiveFileId(firstFile.id);
+        setActiveFileName(firstFile.filePath);
+        setCode(firstFile.content || "");
+        setVersions(history);
+      } else {
+        setActiveFileId(null);
+        setActiveFileName("DataProcessor.java");
+        setCode(defaultJavaCode);
+        setVersions([]);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load room";
       toast.error(message);
@@ -58,7 +91,13 @@ const Workspace = () => {
 
   useEffect(() => {
     if (!roomId) {
-      navigate("/dashboard");
+      setLoadingRoom(false);
+      setRoom(null);
+      setRoomMembers([]);
+      setRoomFiles([]);
+      setVersions([]);
+      setActiveFileId(null);
+      setActiveFileName("DataProcessor.java");
       return;
     }
     void loadRoomContext(roomId);
@@ -69,7 +108,7 @@ const Workspace = () => {
     toast.info("Running backend analysis...");
 
     try {
-      const result = await analyzeJavaWorkspace(code, roomId || "demo");
+      const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`);
       setAnalysis(result.analysis);
       setIssues(result.issues);
       setBackendAvailable(true);
@@ -86,7 +125,7 @@ const Workspace = () => {
   useEffect(() => {
     const timeoutId = window.setTimeout(async () => {
       try {
-        const result = await analyzeJavaWorkspace(code, roomId || "workspace");
+        const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`);
         setAnalysis(result.analysis);
         setIssues(result.issues);
         setBackendAvailable(true);
@@ -99,30 +138,138 @@ const Workspace = () => {
   }, [code, roomId]);
 
   const handleDownload = () => {
-    const blob = new Blob([code], { type: "text/x-java-source" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "DataProcessor.java";
-    a.click();
-    URL.revokeObjectURL(url);
+    const triggerDownload = (blob: Blob, fileName: string) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    if (!isStandalone && room && activeFileId) {
+      void (async () => {
+        try {
+          const { blob, fileName } = await downloadRoomFile(room.id, activeFileId);
+          triggerDownload(blob, fileName);
+          toast.success("File downloaded!");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Download failed";
+          toast.error(message);
+        }
+      })();
+      return;
+    }
+
+    triggerDownload(new Blob([code], { type: "text/x-java-source" }), activeFileName || "DataProcessor.java");
     toast.success("File downloaded!");
   };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!isStandalone && room) {
+      void (async () => {
+        try {
+          const uploaded = await uploadRoomJavaFile(room.id, file);
+          const files = await getRoomFiles(room.id);
+          setRoomFiles(files);
+          setActiveFileId(uploaded.id);
+          setActiveFileName(uploaded.filePath);
+          setCode(uploaded.content || "");
+          const history = await getFileVersions(room.id, uploaded.id);
+          setVersions(history);
+          toast.success(`Uploaded ${uploaded.filePath}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Upload failed";
+          toast.error(message);
+        } finally {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+        }
+      })();
+      return;
+    }
+
     if (file) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         setCode(ev.target?.result as string);
+        setActiveFileName(file.name || "DataProcessor.java");
         toast.success(`Loaded ${file.name}`);
       };
       reader.readAsText(file);
     }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const handleSaveVersion = () => {
+  const handleSaveVersion = async () => {
+    if (!isStandalone && room && activeFileId) {
+      try {
+        await saveVersionSnapshot(room.id, activeFileId, code);
+        const files = await getRoomFiles(room.id);
+        const history = await getFileVersions(room.id, activeFileId);
+        setRoomFiles(files);
+        setVersions(history);
+        toast.success("Version saved");
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to save version";
+        toast.error(message);
+        return;
+      }
+    }
+
     toast.success("Version saved!");
+  };
+
+  const handleSelectFile = async (fileId: number) => {
+    if (!room) {
+      return;
+    }
+
+    try {
+      const file = await getRoomFile(room.id, fileId);
+      setLoadingVersions(true);
+      const history = await getFileVersions(room.id, fileId);
+      setActiveFileId(file.id);
+      setActiveFileName(file.filePath);
+      setCode(file.content || "");
+      setVersions(history);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to open file";
+      toast.error(message);
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const handleCreateFile = async (filePath: string) => {
+    if (isStandalone || !room) {
+      toast.info("Create file is available inside a room");
+      return;
+    }
+
+    try {
+      const created = await createRoomFile(room.id, filePath, "");
+      const files = await getRoomFiles(room.id);
+      setRoomFiles(files);
+      setActiveFileId(created.id);
+      setActiveFileName(created.filePath);
+      setCode(created.content || "");
+      setVersions([]);
+      toast.success(`Created ${created.filePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to create file";
+      toast.error(message);
+    }
   };
 
   const handleJoinRoom = async (roomCode: string) => {
@@ -152,7 +299,29 @@ const Workspace = () => {
     }
   };
 
+  const handleRevertVersion = async (versionId: number) => {
+    if (!room || !activeFileId) {
+      return;
+    }
+
+    try {
+      const reverted = await revertFileVersion(room.id, activeFileId, versionId);
+      setCode(reverted.content || "");
+      const files = await getRoomFiles(room.id);
+      const history = await getFileVersions(room.id, activeFileId);
+      setRoomFiles(files);
+      setVersions(history);
+      toast.success(`Reverted to v${reverted.revertedFromVersion}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to revert version";
+      toast.error(message);
+    }
+  };
+
   const canManageMembers = Boolean(room && user.email === room.ownerEmail);
+  const visibleMembers = isStandalone
+    ? [{ id: 0, name: user.name, email: user.email, joinedAt: new Date().toISOString(), owner: true }]
+    : roomMembers;
 
   if (loadingRoom) {
     return (
@@ -168,12 +337,12 @@ const Workspace = () => {
         <div className="flex items-center gap-2 ml-2">
           <div className="flex items-center gap-1.5 bg-surface rounded-md px-2 py-1">
             <Hash className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs font-mono text-foreground">{room?.roomCode}</span>
+            <span className="text-xs font-mono text-foreground">{isStandalone ? "STANDALONE" : room?.roomCode}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-surface rounded-md px-2 py-1">
             <Users className="h-3 w-3 text-primary" />
             <div className="flex -space-x-1.5">
-              {roomMembers.slice(0, 5).map((member, idx) => (
+              {visibleMembers.slice(0, 5).map((member, idx) => (
                 <div
                   key={member.id}
                   className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2 border-card"
@@ -184,7 +353,7 @@ const Workspace = () => {
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-muted-foreground">{roomMembers.length} members</span>
+            <span className="text-[10px] text-muted-foreground">{visibleMembers.length} members</span>
           </div>
         </div>
         <div className="flex-1" />
@@ -208,16 +377,22 @@ const Workspace = () => {
 
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
-          roomCode={room?.roomCode || roomId || "workspace"}
-          roomName={room?.roomName || "Workspace"}
+          roomCode={isStandalone ? "STANDALONE" : room?.roomCode || roomId || "workspace"}
+          roomName={isStandalone ? "Personal Workspace" : room?.roomName || "Workspace"}
           roomMembers={roomMembers}
           roomFiles={roomFiles}
+          versions={versions}
+          loadingVersions={loadingVersions}
+          activeFileId={activeFileId}
           canManageMembers={canManageMembers}
           onSaveVersion={handleSaveVersion}
           onJoinRoom={handleJoinRoom}
           onAddMember={handleAddMember}
+          onSelectFile={handleSelectFile}
+          onCreateFile={handleCreateFile}
+          onRevertVersion={handleRevertVersion}
         />
-        <EditorPanel code={code} onChange={setCode} issues={issues} />
+        <EditorPanel code={code} fileName={activeFileName} onChange={setCode} issues={issues} />
 
         <div className="w-80 workspace-panel flex flex-col overflow-hidden shrink-0">
           <Tabs defaultValue="analysis" className="flex flex-col h-full">

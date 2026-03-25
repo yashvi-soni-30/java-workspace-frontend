@@ -1,75 +1,81 @@
-# Java Workspace Project
+# Collaborative Java Workspace Frontend
 
-## Project info
+React + TypeScript frontend for the Collaborative Java Workspace platform.
 
-Collaborative Java workspace with a React frontend and Spring Boot backend for code analysis and optimization.
+It provides:
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+- authentication (signup/login/me)
+- dashboard and room navigation
+- Java editor experience
+- backend-powered analysis and optimization UI
+- collaborative room file flows (open/create/upload/download/version history)
 
-## How can I edit this code?
+## Tech Stack
 
-There are several ways of editing your application.
+- React 18
+- TypeScript
+- Vite 5
+- Tailwind CSS + shadcn/ui
+- TanStack Query
+- Vitest + Testing Library
 
-**Use Lovable**
+## Prerequisites
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- Node.js 20+ (or latest LTS)
+- npm (or Bun if preferred)
+- Backend API running (default `http://127.0.0.1:8081`)
 
-Changes made via Lovable will be committed automatically to this repo.
+## Environment Setup
 
-**Use your preferred IDE**
+Create local env file from template:
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```powershell
+Copy-Item .env.example .env
+```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Available variables:
 
-Follow these steps:
+- `VITE_API_BASE_URL`
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+Behavior:
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+- Leave it empty (`VITE_API_BASE_URL=`) to use same-origin `/api` with Vite dev proxy.
+- Set it (example: `http://127.0.0.1:8081`) to call backend directly.
 
-# Step 3: Install the necessary dependencies.
-npm i
+## Run Locally
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start dev server:
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Default frontend URL: `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Scripts
 
-**Use GitHub Codespaces**
+- `npm run dev` - start Vite dev server on port 8080
+- `npm run build` - production build
+- `npm run build:dev` - development-mode build
+- `npm run preview` - preview built app
+- `npm run lint` - run ESLint
+- `npm run test` - run unit tests once
+- `npm run test:watch` - watch mode tests
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Backend Integration
 
-## What technologies are used for this project?
+By default, Vite proxies requests from `/api/*` to `http://127.0.0.1:8081`.
 
-This project is built with:
+Proxy config is defined in `vite.config.ts`.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Notes
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Do not commit `.env`.
+- Commit `.env.example` only with safe public placeholders.
+- If auth calls fail during local development, confirm backend is healthy at `http://localhost:8081/actuator/health`.

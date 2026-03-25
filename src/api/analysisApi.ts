@@ -55,27 +55,65 @@ interface FullReviewApiResponse {
 	};
 }
 
+interface AnalysisJobStartResponse {
+	jobId: string;
+	status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+	createdAt: string;
+}
+
+interface AnalysisJobStatusResponse {
+	jobId: string;
+	status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+	createdAt: string;
+	startedAt?: string | null;
+	completedAt?: string | null;
+	error?: string;
+	result?: FullReviewApiResponse;
+}
+
 export interface WorkspaceReviewResult {
 	analysis: WorkspaceAnalysis;
 	issues: WorkspaceIssue[];
 }
 
-export async function analyzeJavaWorkspace(code: string, workspaceName: string): Promise<WorkspaceReviewResult> {
-	const payload = await apiJson<FullReviewApiResponse>("/api/v1/analyzer/java/full", {
+function buildWorkspacePayload(code: string, workspaceName: string, notifyOnCompletion: boolean) {
+	return {
+		workspaceName,
+		entryFile: "src/DataProcessor.java",
+		notifyOnCompletion,
+		files: {
+			"src/DataProcessor.java": code,
+		},
+	};
+}
+
+export async function queueJavaAnalysis(
+	code: string,
+	workspaceName: string,
+	notifyOnCompletion: boolean
+): Promise<AnalysisJobStartResponse> {
+	return apiJson<AnalysisJobStartResponse>("/api/v1/analyzer/java/jobs", {
 		method: "POST",
 		auth: true,
 		headers: {
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify({
-			workspaceName,
-			entryFile: "src/DataProcessor.java",
-			files: {
-				"src/DataProcessor.java": code,
-			},
-		}),
+		body: JSON.stringify(buildWorkspacePayload(code, workspaceName, notifyOnCompletion)),
 	});
+}
 
+export async function getJavaAnalysisJobStatus(jobId: string): Promise<AnalysisJobStatusResponse> {
+	return apiJson<AnalysisJobStatusResponse>(`/api/v1/analyzer/java/jobs/${jobId}`, {
+		method: "GET",
+		auth: true,
+	});
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function mapFullReview(payload: FullReviewApiResponse): WorkspaceReviewResult {
 	return {
 		analysis: {
 			cyclomaticComplexity: payload.analysis.complexity.cyclomaticComplexity,
@@ -97,4 +135,29 @@ export async function analyzeJavaWorkspace(code: string, workspaceName: string):
 			impact: issue.impact,
 		})),
 	};
+}
+
+export async function analyzeJavaWorkspace(
+	code: string,
+	workspaceName: string,
+	notifyOnCompletion = true
+): Promise<WorkspaceReviewResult> {
+	const queued = await queueJavaAnalysis(code, workspaceName, notifyOnCompletion);
+	const maxAttempts = 50;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		const status = await getJavaAnalysisJobStatus(queued.jobId);
+
+		if (status.status === "COMPLETED" && status.result) {
+			return mapFullReview(status.result);
+		}
+
+		if (status.status === "FAILED") {
+			throw new Error(status.error || "Analysis job failed");
+		}
+
+		await sleep(300);
+	}
+
+	throw new Error("Analysis job timed out");
 }

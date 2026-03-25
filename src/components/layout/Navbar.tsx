@@ -3,6 +3,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/hooks/useAuth";
 import { Sun, Moon, LogOut, Code2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import NotificationCenter from "@/components/notifications/NotificationCenter";
 
 interface NavbarProps {
   showAuth?: boolean;
@@ -30,6 +31,7 @@ const Navbar = ({ showAuth = true, children }: NavbarProps) => {
 
         {showAuth && user && (
           <>
+            <NotificationCenter />
             <div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-semibold">
               {user.name.charAt(0).toUpperCase()}
             </div>

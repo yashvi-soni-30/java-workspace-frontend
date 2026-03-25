@@ -72,9 +72,39 @@ export interface DashboardActivity {
   createdAt: string;
 }
 
+export interface RoomActivity {
+  id: number;
+  type: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  roomId: number;
+  roomName: string;
+  actorName?: string | null;
+  actorEmail?: string | null;
+}
+
 export interface DashboardSummary {
   totals: DashboardTotals;
   performance: DashboardPerformance;
   rooms: RoomSummary[];
   recentActivity: DashboardActivity[];
+}
+
+export interface NotificationItem {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  readAt?: string | null;
+  read: boolean;
+  roomId?: number | null;
+  roomCode?: string | null;
+  roomName?: string | null;
+}
+
+export interface NotificationListResponse {
+  unreadCount: number;
+  notifications: NotificationItem[];
 }

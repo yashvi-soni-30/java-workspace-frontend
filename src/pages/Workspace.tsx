@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
@@ -15,12 +15,15 @@ import { toast } from "sonner";
 import { analyzeJavaWorkspace } from "@/api/analysisApi";
 import type { WorkspaceAnalysis, WorkspaceIssue } from "@/api/analysisApi";
 import { getUserFriendlyErrorMessage } from "@/hooks/useToast";
+import { useAutoSave } from "@/hooks/useAutoSave";
+import { useSocket } from "@/hooks/useSocket";
 import {
   addRoomMember,
   createRoomFile,
   downloadRoomFile,
   getFileVersions,
   getRoomByCode,
+  getRoomActivity,
   getRoomFile,
   getRoomFiles,
   getRoomMembers,
@@ -31,8 +34,10 @@ import {
   updateRoomMemberPermissions,
   uploadRoomJavaFile,
 } from "@/api/workspaceApi";
-import type { RoomFile, RoomMember, RoomSummary, VersionEntry } from "@/types/workspace.types";
+import type { RoomActivity, RoomFile, RoomMember, RoomSummary, VersionEntry } from "@/types/workspace.types";
 import { useAuth } from "@/hooks/useAuth";
+import { buildDraftStorageKey, clearDraftSnapshot, isDraftNewerThanServer, loadDraftSnapshot, saveDraftSnapshot } from "@/utils/draftStorage";
+import type { RoomRealtimeEvent } from "@/services/socketService";
 
 const Workspace = () => {
   const { user } = useAuth();
@@ -48,17 +53,67 @@ const Workspace = () => {
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
   const [roomFiles, setRoomFiles] = useState<RoomFile[]>([]);
   const [versions, setVersions] = useState<VersionEntry[]>([]);
+  const [roomActivity, setRoomActivity] = useState<RoomActivity[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [activeFileId, setActiveFileId] = useState<number | null>(null);
   const [activeFileUpdatedAt, setActiveFileUpdatedAt] = useState<string | null>(null);
   const [activeFileName, setActiveFileName] = useState("DataProcessor.java");
   const [loadingRoom, setLoadingRoom] = useState(true);
+  const [localDraftSavedAt, setLocalDraftSavedAt] = useState<Date | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastSyncedCodeRef = useRef(code);
+  const codeRef = useRef(code);
+  const analysisRequestSeq = useRef(0);
+
+  useEffect(() => {
+    codeRef.current = code;
+  }, [code]);
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
+  const resolveDraftContent = useCallback((params: {
+    content: string;
+    fileName: string;
+    serverUpdatedAt?: string | null;
+    roomNumericId?: number | null;
+    fileNumericId?: number | null;
+    standalone: boolean;
+  }) => {
+    const storageKey = buildDraftStorageKey({
+      userEmail: user.email,
+      roomId: params.roomNumericId ?? null,
+      fileId: params.fileNumericId ?? null,
+      fileName: params.fileName,
+      isStandalone: params.standalone,
+    });
+
+    const draft = loadDraftSnapshot(storageKey);
+    if (!draft) {
+      return { content: params.content, restored: false };
+    }
+
+    const shouldOfferRecovery =
+      draft.content !== params.content &&
+      isDraftNewerThanServer(draft, params.serverUpdatedAt ?? null);
+
+    if (!shouldOfferRecovery) {
+      return { content: params.content, restored: false };
+    }
+
+    const confirmed = window.confirm(
+      `Recover unsaved local draft for ${params.fileName}?\nDraft saved at ${new Date(draft.savedAt).toLocaleString()}`
+    );
+
+    if (!confirmed) {
+      clearDraftSnapshot(storageKey);
+      return { content: params.content, restored: false };
+    }
+
+    toast.info(`Recovered local draft for ${params.fileName}`);
+    return { content: draft.content, restored: true };
+  }, [user.email]);
 
   const loadRoomContext = async (codeValue: string) => {
     setLoadingRoom(true);
@@ -71,14 +126,24 @@ const Workspace = () => {
       setRoom(roomDetails);
       setRoomMembers(members);
       setRoomFiles(files);
+      const activity = await getRoomActivity(roomDetails.id);
+      setRoomActivity(activity);
 
       if (files.length > 0) {
         const firstFile = await getRoomFile(roomDetails.id, files[0].id);
         const history = await getFileVersions(roomDetails.id, files[0].id);
+        const resolved = resolveDraftContent({
+          content: firstFile.content || "",
+          fileName: firstFile.filePath,
+          serverUpdatedAt: firstFile.updatedAt,
+          roomNumericId: roomDetails.id,
+          fileNumericId: firstFile.id,
+          standalone: false,
+        });
         setActiveFileId(firstFile.id);
         setActiveFileUpdatedAt(firstFile.updatedAt);
         setActiveFileName(firstFile.filePath);
-        setCode(firstFile.content || "");
+        setCode(resolved.content);
         lastSyncedCodeRef.current = firstFile.content || "";
         setVersions(history);
       } else {
@@ -99,51 +164,75 @@ const Workspace = () => {
 
   useEffect(() => {
     if (!roomId) {
+      const restored = resolveDraftContent({
+        content: defaultJavaCode,
+        fileName: "DataProcessor.java",
+        standalone: true,
+      });
       setLoadingRoom(false);
       setRoom(null);
       setRoomMembers([]);
       setRoomFiles([]);
       setVersions([]);
+      setRoomActivity([]);
       setActiveFileId(null);
       setActiveFileUpdatedAt(null);
       setActiveFileName("DataProcessor.java");
+      setCode(restored.content);
+      lastSyncedCodeRef.current = restored.content;
       return;
     }
     void loadRoomContext(roomId);
-  }, [roomId]);
+  }, [roomId, resolveDraftContent]);
 
   const handleAnalyze = async () => {
+    const requestId = ++analysisRequestSeq.current;
     setAnalyzing(true);
-    toast.info("Running backend analysis...");
+    toast.info("Queued backend analysis...");
 
     try {
-      const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`);
+      const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`, true);
+      if (requestId !== analysisRequestSeq.current) {
+        return;
+      }
       setAnalysis(result.analysis);
       setIssues(result.issues);
       setBackendAvailable(true);
       toast.success("Analysis complete! Live backend results loaded.");
     } catch (error) {
+      if (requestId !== analysisRequestSeq.current) {
+        return;
+      }
       setBackendAvailable(false);
       toast.error(getUserFriendlyErrorMessage(error, "Unable to reach backend service."));
     } finally {
-      setAnalyzing(false);
+      if (requestId === analysisRequestSeq.current) {
+        setAnalyzing(false);
+      }
     }
   };
 
   useEffect(() => {
+    const requestId = ++analysisRequestSeq.current;
     const timeoutId = window.setTimeout(async () => {
       try {
-        const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`);
+        const result = await analyzeJavaWorkspace(code, roomId || `solo-${user.email}`, false);
+        if (requestId !== analysisRequestSeq.current) {
+          return;
+        }
         setAnalysis(result.analysis);
         setIssues(result.issues);
         setBackendAvailable(true);
       } catch {
+        if (requestId !== analysisRequestSeq.current) {
+          return;
+        }
         setBackendAvailable(false);
       }
-    }, 700);
+    }, 1200);
 
     return () => window.clearTimeout(timeoutId);
-  }, [code, roomId]);
+  }, [code, roomId, user.email]);
 
   const handleDownload = () => {
     const triggerDownload = (blob: Blob, fileName: string) => {
@@ -187,10 +276,20 @@ const Workspace = () => {
           setActiveFileId(uploaded.id);
           setActiveFileUpdatedAt(uploaded.updatedAt);
           setActiveFileName(uploaded.filePath);
-          setCode(uploaded.content || "");
+          const resolved = resolveDraftContent({
+            content: uploaded.content || "",
+            fileName: uploaded.filePath,
+            serverUpdatedAt: uploaded.updatedAt,
+            roomNumericId: room.id,
+            fileNumericId: uploaded.id,
+            standalone: false,
+          });
+          setCode(resolved.content);
           lastSyncedCodeRef.current = uploaded.content || "";
           const history = await getFileVersions(room.id, uploaded.id);
           setVersions(history);
+          const activity = await getRoomActivity(room.id);
+          setRoomActivity(activity);
           toast.success(`Uploaded ${uploaded.filePath}`);
         } catch (error) {
           toast.error(getUserFriendlyErrorMessage(error, "Upload failed"));
@@ -226,6 +325,8 @@ const Workspace = () => {
         const history = await getFileVersions(room.id, activeFileId);
         setRoomFiles(files);
         setVersions(history);
+        const activity = await getRoomActivity(room.id);
+        setRoomActivity(activity);
         toast.success("Version saved");
         return;
       } catch (error) {
@@ -246,10 +347,18 @@ const Workspace = () => {
       const file = await getRoomFile(room.id, fileId);
       setLoadingVersions(true);
       const history = await getFileVersions(room.id, fileId);
+      const resolved = resolveDraftContent({
+        content: file.content || "",
+        fileName: file.filePath,
+        serverUpdatedAt: file.updatedAt,
+        roomNumericId: room.id,
+        fileNumericId: file.id,
+        standalone: false,
+      });
       setActiveFileId(file.id);
       setActiveFileUpdatedAt(file.updatedAt);
       setActiveFileName(file.filePath);
-      setCode(file.content || "");
+      setCode(resolved.content);
       lastSyncedCodeRef.current = file.content || "";
       setVersions(history);
     } catch (error) {
@@ -272,9 +381,19 @@ const Workspace = () => {
       setActiveFileId(created.id);
       setActiveFileUpdatedAt(created.updatedAt);
       setActiveFileName(created.filePath);
-      setCode(created.content || "");
+      const resolved = resolveDraftContent({
+        content: created.content || "",
+        fileName: created.filePath,
+        serverUpdatedAt: created.updatedAt,
+        roomNumericId: room.id,
+        fileNumericId: created.id,
+        standalone: false,
+      });
+      setCode(resolved.content);
       lastSyncedCodeRef.current = created.content || "";
       setVersions([]);
+      const activity = await getRoomActivity(room.id);
+      setRoomActivity(activity);
       toast.success(`Created ${created.filePath}`);
     } catch (error) {
       toast.error(getUserFriendlyErrorMessage(error, "Unable to create file"));
@@ -300,6 +419,8 @@ const Workspace = () => {
       await addRoomMember(room.id, memberEmail);
       const members = await getRoomMembers(room.id);
       setRoomMembers(members);
+      const activity = await getRoomActivity(room.id);
+      setRoomActivity(activity);
       toast.success("Member added");
     } catch (error) {
       toast.error(getUserFriendlyErrorMessage(error, "Unable to add member"));
@@ -321,6 +442,8 @@ const Workspace = () => {
     try {
       const updated = await updateRoomMemberPermissions(room.id, memberUserId, permissions);
       setRoomMembers((prev) => prev.map((member) => (member.id === updated.id ? updated : member)));
+      const activity = await getRoomActivity(room.id);
+      setRoomActivity(activity);
       toast.success("Member permissions updated");
     } catch (error) {
       toast.error(getUserFriendlyErrorMessage(error, "Unable to update member permissions"));
@@ -340,6 +463,8 @@ const Workspace = () => {
       const history = await getFileVersions(room.id, activeFileId);
       setRoomFiles(files);
       setVersions(history);
+      const activity = await getRoomActivity(room.id);
+      setRoomActivity(activity);
       const refreshed = await getRoomFile(room.id, activeFileId);
       setActiveFileUpdatedAt(refreshed.updatedAt);
       toast.success(`Reverted to v${reverted.revertedFromVersion}`);
@@ -365,27 +490,125 @@ const Workspace = () => {
       }]
     : roomMembers;
 
+  const handleRealtimeEvent = useCallback((event: RoomRealtimeEvent) => {
+    if (!room || isStandalone) {
+      return;
+    }
+
+    const actorEmail = String(event.payload?.actorEmail ?? "").toLowerCase();
+    const isCurrentUserEvent = actorEmail && actorEmail === user.email.toLowerCase();
+
+    if ((event.type === "FILE_UPDATED" || event.type === "FILE_UPLOADED" || event.type === "VERSION_REVERTED") && !isCurrentUserEvent) {
+      const fileId = Number(event.payload?.fileId ?? -1);
+      const fileContent = typeof event.payload?.content === "string" ? event.payload.content : null;
+      const updatedAt = typeof event.payload?.updatedAt === "string" ? event.payload.updatedAt : null;
+
+      if (activeFileId && fileId === activeFileId && fileContent != null) {
+        if (codeRef.current === lastSyncedCodeRef.current) {
+          setCode(fileContent);
+          lastSyncedCodeRef.current = fileContent;
+          if (updatedAt) {
+            setActiveFileUpdatedAt(updatedAt);
+          }
+        } else {
+          toast.warning("Remote changes detected. Save or refresh to merge latest updates.");
+        }
+      }
+    }
+
+    if (["FILE_CREATED", "FILE_UPDATED", "FILE_UPLOADED", "VERSION_SAVED", "VERSION_REVERTED"].includes(event.type)) {
+      void (async () => {
+        try {
+          const [files, activity] = await Promise.all([getRoomFiles(room.id), getRoomActivity(room.id)]);
+          setRoomFiles(files);
+          setRoomActivity(activity);
+          if (activeFileId) {
+            const history = await getFileVersions(room.id, activeFileId);
+            setVersions(history);
+          }
+        } catch {
+          // Ignore transient realtime refresh failures.
+        }
+      })();
+    }
+
+    if (["ROOM_JOINED", "MEMBER_ADDED", "MEMBER_PERMISSIONS_UPDATED"].includes(event.type)) {
+      void (async () => {
+        try {
+          const [members, activity] = await Promise.all([getRoomMembers(room.id), getRoomActivity(room.id)]);
+          setRoomMembers(members);
+          setRoomActivity(activity);
+        } catch {
+          // Ignore transient realtime refresh failures.
+        }
+      })();
+    }
+  }, [room, isStandalone, user.email, activeFileId]);
+
+  const { connected: realtimeConnected, activeUsers } = useSocket({
+    roomId: room?.id,
+    enabled: !isStandalone && Boolean(room),
+    onEvent: handleRealtimeEvent,
+  });
+
+  const draftStorageKey = useMemo(() => buildDraftStorageKey({
+    userEmail: user.email,
+    roomId: room?.id,
+    fileId: activeFileId,
+    fileName: activeFileName,
+    isStandalone,
+  }), [user.email, room?.id, activeFileId, activeFileName, isStandalone]);
+
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      saveDraftSnapshot(draftStorageKey, {
+        content: code,
+        fileName: activeFileName,
+        savedAt: new Date().toISOString(),
+        serverUpdatedAt: activeFileUpdatedAt,
+      });
+      setLocalDraftSavedAt(new Date());
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [draftStorageKey, code, activeFileName, activeFileUpdatedAt]);
+
+  const performRemoteAutoSave = useCallback(async () => {
     if (isStandalone || !room || !activeFileId || !activeFileUpdatedAt) {
       return;
     }
 
-    if (code === lastSyncedCodeRef.current) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        const saved = await saveRoomFile(room.id, activeFileId, code, activeFileUpdatedAt, activeFileName);
-        setActiveFileUpdatedAt(saved.updatedAt);
-        lastSyncedCodeRef.current = saved.content || "";
-      } catch (error) {
-        toast.error(getUserFriendlyErrorMessage(error, "Unable to sync file changes"));
-      }
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutId);
+    const saved = await saveRoomFile(room.id, activeFileId, code, activeFileUpdatedAt, activeFileName);
+    setActiveFileUpdatedAt(saved.updatedAt);
+    lastSyncedCodeRef.current = saved.content || "";
   }, [isStandalone, room, activeFileId, activeFileUpdatedAt, code, activeFileName]);
+
+  const autoSave = useAutoSave({
+    enabled: !isStandalone && Boolean(room && activeFileId && activeFileUpdatedAt),
+    value: code,
+    hasChanges: code !== lastSyncedCodeRef.current,
+    delayMs: 1200,
+    onSave: performRemoteAutoSave,
+    onError: (error) => {
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to sync file changes"));
+    },
+  });
+
+  const saveStatusText = useMemo(() => {
+    if (autoSave.status === "saving") {
+      return "Saving...";
+    }
+    if (autoSave.status === "error") {
+      return "Auto-save failed";
+    }
+    if (autoSave.lastSavedAt) {
+      return `Saved ${autoSave.lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    }
+    if (localDraftSavedAt) {
+      return `Draft saved ${localDraftSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    }
+    return "All changes up to date";
+  }, [autoSave.status, autoSave.lastSavedAt, localDraftSavedAt]);
 
   if (loadingRoom) {
     return (
@@ -417,11 +640,21 @@ const Workspace = () => {
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-muted-foreground">{visibleMembers.length} members</span>
+            <span className="text-[10px] text-muted-foreground">
+              {isStandalone ? `${visibleMembers.length} members` : `${activeUsers.length} online / ${visibleMembers.length} members`}
+            </span>
+            {!isStandalone && (
+              <span className={`text-[10px] ${realtimeConnected ? "text-primary" : "text-muted-foreground"}`}>
+                {realtimeConnected ? "live" : "offline"}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] px-2 ${autoSave.status === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+            {saveStatusText}
+          </span>
           {!backendAvailable && (
             <span className="text-[10px] text-warning px-2">Live error highlight offline</span>
           )}
@@ -467,11 +700,29 @@ const Workspace = () => {
               <TabsTrigger value="analysis" className="text-xs flex-1 data-[state=active]:bg-surface rounded-md h-6">Analysis</TabsTrigger>
               <TabsTrigger value="issues" className="text-xs flex-1 data-[state=active]:bg-surface rounded-md h-6">Issues</TabsTrigger>
               <TabsTrigger value="learning" className="text-xs flex-1 data-[state=active]:bg-surface rounded-md h-6">Learning</TabsTrigger>
+              <TabsTrigger value="activity" className="text-xs flex-1 data-[state=active]:bg-surface rounded-md h-6">Activity</TabsTrigger>
             </TabsList>
             <ScrollArea className="flex-1">
               <TabsContent value="analysis" className="mt-0"><AnalysisPanel result={analysis} /></TabsContent>
               <TabsContent value="issues" className="mt-0"><IssuesPanel issues={issues} /></TabsContent>
               <TabsContent value="learning" className="mt-0"><LearningPanel /></TabsContent>
+              <TabsContent value="activity" className="mt-0 p-3">
+                {roomActivity.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No activity yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {roomActivity.slice(0, 20).map((event) => (
+                      <div key={event.id} className="rounded-md border border-border bg-surface p-2">
+                        <p className="text-xs font-semibold text-foreground">{event.title}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{event.description}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {(event.actorName || event.actorEmail || "Unknown") + " • " + new Date(event.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
             </ScrollArea>
           </Tabs>
         </div>

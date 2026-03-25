@@ -1,4 +1,4 @@
-import type { RoomFile, RoomFileContent, RoomMember, RoomSummary, VersionEntry, VersionRevertResult } from "@/types/workspace.types";
+import type { RoomActivity, RoomFile, RoomFileContent, RoomMember, RoomSummary, VersionEntry, VersionRevertResult } from "@/types/workspace.types";
 import { apiBlob, apiJson, authBearerHeader, authJsonHeaders } from "@/api/axiosClient";
 
 interface WorkspaceRequestPayload {
@@ -74,6 +74,10 @@ export function updateRoomMemberPermissions(
 
 export function getRoomFiles(roomId: number): Promise<RoomFile[]> {
   return workspaceRequest<RoomFile[]>(`/api/workspaces/rooms/${roomId}/files`, "GET");
+}
+
+export function getRoomActivity(roomId: number): Promise<RoomActivity[]> {
+  return workspaceRequest<RoomActivity[]>(`/api/workspaces/rooms/${roomId}/activity`, "GET");
 }
 
 export function getRoomFile(roomId: number, fileId: number): Promise<RoomFileContent> {

@@ -1,3 +1,5 @@
+import { apiJson } from "@/api/axiosClient";
+
 export type IssueSeverity = "high" | "medium" | "low";
 export type IssueType =
 	| "COMPILER_ERROR"
@@ -58,17 +60,12 @@ export interface WorkspaceReviewResult {
 	issues: WorkspaceIssue[];
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
-const TOKEN_KEY = "cjw-token";
-
 export async function analyzeJavaWorkspace(code: string, workspaceName: string): Promise<WorkspaceReviewResult> {
-	const token = localStorage.getItem(TOKEN_KEY);
-
-	const response = await fetch(`${API_BASE_URL}/api/v1/analyzer/java/full`, {
+	const payload = await apiJson<FullReviewApiResponse>("/api/v1/analyzer/java/full", {
 		method: "POST",
+		auth: true,
 		headers: {
 			"Content-Type": "application/json",
-			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 		body: JSON.stringify({
 			workspaceName,
@@ -78,12 +75,6 @@ export async function analyzeJavaWorkspace(code: string, workspaceName: string):
 			},
 		}),
 	});
-
-	if (!response.ok) {
-		throw new Error(`Backend request failed with status ${response.status}`);
-	}
-
-	const payload = (await response.json()) as FullReviewApiResponse;
 
 	return {
 		analysis: {

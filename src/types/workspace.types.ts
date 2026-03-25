@@ -14,6 +14,9 @@ export interface RoomMember {
   email: string;
   joinedAt: string;
   owner: boolean;
+  canEditFiles: boolean;
+  canSaveVersions: boolean;
+  canRevertVersions: boolean;
 }
 
 export interface RoomFile {
@@ -47,4 +50,31 @@ export interface VersionRevertResult {
   newVersion: number;
   updatedAt: string;
   updatedByEmail: string | null;
+}
+
+export interface DashboardTotals {
+  rooms: number;
+  files: number;
+  versions: number;
+  analyses: number;
+}
+
+export interface DashboardPerformance {
+  averageScore: number;
+  bestScore: number;
+  latestRiskLevel: string;
+}
+
+export interface DashboardActivity {
+  type: "VERSION_SAVED" | "ANALYSIS_RUN" | "ROOM_JOINED";
+  title: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface DashboardSummary {
+  totals: DashboardTotals;
+  performance: DashboardPerformance;
+  rooms: RoomSummary[];
+  recentActivity: DashboardActivity[];
 }

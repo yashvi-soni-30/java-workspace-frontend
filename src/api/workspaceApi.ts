@@ -1,7 +1,5 @@
 import type { RoomFile, RoomFileContent, RoomMember, RoomSummary, VersionEntry, VersionRevertResult } from "@/types/workspace.types";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
-const TOKEN_KEY = "cjw-token";
+import { apiBlob, apiJson, authBearerHeader, authJsonHeaders } from "@/api/axiosClient";
 
 interface WorkspaceRequestPayload {
   roomName?: string;
@@ -11,35 +9,14 @@ interface WorkspaceRequestPayload {
   language?: string;
   content?: string;
   versionMessage?: string;
-}
-
-async function parseResponse<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-
-  if (!response.ok) {
-    const message = data?.error || data?.message || "Workspace request failed";
-    throw new Error(message);
-  }
-
-  return data as T;
-}
-
-function getAuthToken(): string {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) {
-    throw new Error("You are not logged in");
-  }
-
-  return token;
+  expectedUpdatedAt?: string;
+  canEditFiles?: boolean;
+  canSaveVersions?: boolean;
+  canRevertVersions?: boolean;
 }
 
 function authHeaders(): HeadersInit {
-  const token = getAuthToken();
-  return {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  };
+  return authJsonHeaders();
 }
 
 async function workspaceRequest<T>(
@@ -47,13 +24,12 @@ async function workspaceRequest<T>(
   method: "GET" | "POST" | "PUT",
   payload?: WorkspaceRequestPayload
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  return apiJson<T>(path, {
     method,
     headers: authHeaders(),
     body: payload ? JSON.stringify(payload) : undefined,
+    auth: false,
   });
-
-  return parseResponse<T>(response);
 }
 
 export function createRoom(roomName: string): Promise<RoomSummary> {
@@ -80,6 +56,22 @@ export function addRoomMember(roomId: number, memberEmail: string): Promise<Room
   return workspaceRequest<RoomSummary>(`/api/workspaces/rooms/${roomId}/members`, "POST", { memberEmail });
 }
 
+export function updateRoomMemberPermissions(
+  roomId: number,
+  memberUserId: number,
+  permissions: {
+    canEditFiles?: boolean;
+    canSaveVersions?: boolean;
+    canRevertVersions?: boolean;
+  }
+): Promise<RoomMember> {
+  return workspaceRequest<RoomMember>(
+    `/api/workspaces/rooms/${roomId}/members/${memberUserId}/permissions`,
+    "PUT",
+    permissions
+  );
+}
+
 export function getRoomFiles(roomId: number): Promise<RoomFile[]> {
   return workspaceRequest<RoomFile[]>(`/api/workspaces/rooms/${roomId}/files`, "GET");
 }
@@ -92,42 +84,38 @@ export function createRoomFile(roomId: number, filePath: string, content = ""): 
   return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files`, "POST", { filePath, content, language: "java" });
 }
 
-export function saveRoomFile(roomId: number, fileId: number, content: string, filePath?: string): Promise<RoomFileContent> {
-  return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files/${fileId}`, "PUT", { content, filePath, language: "java" });
+export function saveRoomFile(
+  roomId: number,
+  fileId: number,
+  content: string,
+  expectedUpdatedAt: string,
+  filePath?: string
+): Promise<RoomFileContent> {
+  return workspaceRequest<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files/${fileId}`, "PUT", {
+    content,
+    filePath,
+    language: "java",
+    expectedUpdatedAt,
+  });
 }
 
 export async function uploadRoomJavaFile(roomId: number, file: File): Promise<RoomFileContent> {
-  const token = getAuthToken();
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/workspaces/rooms/${roomId}/files/upload`, {
+  return apiJson<RoomFileContent>(`/api/workspaces/rooms/${roomId}/files/upload`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: authBearerHeader(),
     body: formData,
   });
-
-  return parseResponse<RoomFileContent>(response);
 }
 
 export async function downloadRoomFile(roomId: number, fileId: number): Promise<{ blob: Blob; fileName: string }> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/api/workspaces/rooms/${roomId}/files/${fileId}/download`, {
+  const { blob, response } = await apiBlob(`/api/workspaces/rooms/${roomId}/files/${fileId}/download`, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: authBearerHeader(),
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
-    throw new Error(data?.error || data?.message || "Download failed");
-  }
-
-  const blob = await response.blob();
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
   const fileName = match?.[1] || "code.java";

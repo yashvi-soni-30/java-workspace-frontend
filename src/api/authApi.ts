@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+import { apiJson, authJsonHeaders } from "@/api/axiosClient";
 
 export interface AuthUser {
 	name: string;
@@ -23,44 +23,29 @@ interface SignupPayload {
 	password: string;
 }
 
-async function parseResponse<T>(response: Response): Promise<T> {
-	const text = await response.text();
-	const data = text ? JSON.parse(text) : {};
-
-	if (!response.ok) {
-		const message = data?.error || data?.message || "Request failed";
-		throw new Error(message);
-	}
-
-	return data as T;
-}
-
 export async function loginApi(payload: LoginPayload): Promise<AuthResponse> {
-	const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+	return apiJson<AuthResponse>("/api/auth/login", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),
 	});
-	return parseResponse<AuthResponse>(response);
 }
 
 export async function signupApi(payload: SignupPayload): Promise<AuthResponse> {
-	const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
+	return apiJson<AuthResponse>("/api/auth/signup", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),
 	});
-	return parseResponse<AuthResponse>(response);
 }
 
 export async function meApi(token: string): Promise<AuthUser> {
-	const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+	const data = await apiJson<AuthResponse>("/api/auth/me", {
 		method: "GET",
 		headers: {
+			...authJsonHeaders(),
 			Authorization: `Bearer ${token}`,
 		},
 	});
-
-	const data = await parseResponse<AuthResponse>(response);
 	return { name: data.name, email: data.email };
 }

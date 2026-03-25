@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ApiError } from "@/api/axiosClient";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
@@ -181,6 +182,30 @@ function useToast() {
     toast,
     dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
   };
+}
+
+export function getUserFriendlyErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return "Your session has expired. Please log in again.";
+    }
+    if (error.status === 403) {
+      return "You do not have permission to perform this action.";
+    }
+    if (error.status === 404) {
+      return "The requested resource was not found.";
+    }
+    if (error.status >= 500) {
+      return "Server is unavailable right now. Please try again shortly.";
+    }
+    return error.message || fallback;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 export { useToast, toast };

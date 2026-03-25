@@ -6,9 +6,10 @@ interface VersionHistoryProps {
 	versions: VersionEntry[];
 	onRevert: (versionId: number) => Promise<void>;
 	loading?: boolean;
+	canRevert?: boolean;
 }
 
-const VersionHistory = ({ versions, onRevert, loading = false }: VersionHistoryProps) => {
+const VersionHistory = ({ versions, onRevert, loading = false, canRevert = false }: VersionHistoryProps) => {
 	if (loading) {
 		return <p className="text-[11px] text-muted-foreground">Loading version history...</p>;
 	}
@@ -26,14 +27,16 @@ const VersionHistory = ({ versions, onRevert, loading = false }: VersionHistoryP
 							<GitBranch className="h-3 w-3 text-primary" />
 							<span className="text-xs font-semibold text-foreground">v{version.versionNumber}</span>
 						</div>
-						<Button
-							variant="ghost"
-							size="sm"
-							className="h-5 px-1.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
-							onClick={() => void onRevert(version.id)}
-						>
-							<RotateCcw className="h-2.5 w-2.5 mr-0.5" /> Revert
-						</Button>
+						{canRevert && (
+							<Button
+								variant="ghost"
+								size="sm"
+								className="h-5 px-1.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+								onClick={() => void onRevert(version.id)}
+							>
+								<RotateCcw className="h-2.5 w-2.5 mr-0.5" /> Revert
+							</Button>
+						)}
 					</div>
 					<p className="text-[11px] text-muted-foreground truncate">{version.contentPreview || "(empty snapshot)"}</p>
 					<p className="text-[10px] text-muted-foreground mt-0.5">

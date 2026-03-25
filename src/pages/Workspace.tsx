@@ -14,6 +14,7 @@ import { Download, Upload, Zap, Hash, Users } from "lucide-react";
 import { toast } from "sonner";
 import { analyzeJavaWorkspace } from "@/api/analysisApi";
 import type { WorkspaceAnalysis, WorkspaceIssue } from "@/api/analysisApi";
+import { getUserFriendlyErrorMessage } from "@/hooks/useToast";
 import {
   addRoomMember,
   createRoomFile,
@@ -25,7 +26,9 @@ import {
   getRoomMembers,
   joinRoom,
   revertFileVersion,
+  saveRoomFile,
   saveVersionSnapshot,
+  updateRoomMemberPermissions,
   uploadRoomJavaFile,
 } from "@/api/workspaceApi";
 import type { RoomFile, RoomMember, RoomSummary, VersionEntry } from "@/types/workspace.types";
@@ -47,9 +50,11 @@ const Workspace = () => {
   const [versions, setVersions] = useState<VersionEntry[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [activeFileId, setActiveFileId] = useState<number | null>(null);
+  const [activeFileUpdatedAt, setActiveFileUpdatedAt] = useState<string | null>(null);
   const [activeFileName, setActiveFileName] = useState("DataProcessor.java");
   const [loadingRoom, setLoadingRoom] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastSyncedCodeRef = useRef(code);
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -71,18 +76,21 @@ const Workspace = () => {
         const firstFile = await getRoomFile(roomDetails.id, files[0].id);
         const history = await getFileVersions(roomDetails.id, files[0].id);
         setActiveFileId(firstFile.id);
+        setActiveFileUpdatedAt(firstFile.updatedAt);
         setActiveFileName(firstFile.filePath);
         setCode(firstFile.content || "");
+        lastSyncedCodeRef.current = firstFile.content || "";
         setVersions(history);
       } else {
         setActiveFileId(null);
+        setActiveFileUpdatedAt(null);
         setActiveFileName("DataProcessor.java");
         setCode(defaultJavaCode);
+        lastSyncedCodeRef.current = defaultJavaCode;
         setVersions([]);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load room";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to load room"));
       navigate("/dashboard");
     } finally {
       setLoadingRoom(false);
@@ -97,6 +105,7 @@ const Workspace = () => {
       setRoomFiles([]);
       setVersions([]);
       setActiveFileId(null);
+      setActiveFileUpdatedAt(null);
       setActiveFileName("DataProcessor.java");
       return;
     }
@@ -115,8 +124,7 @@ const Workspace = () => {
       toast.success("Analysis complete! Live backend results loaded.");
     } catch (error) {
       setBackendAvailable(false);
-      const message = error instanceof Error ? error.message : "Unable to reach backend service.";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to reach backend service."));
     } finally {
       setAnalyzing(false);
     }
@@ -154,8 +162,7 @@ const Workspace = () => {
           triggerDownload(blob, fileName);
           toast.success("File downloaded!");
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Download failed";
-          toast.error(message);
+          toast.error(getUserFriendlyErrorMessage(error, "Download failed"));
         }
       })();
       return;
@@ -178,14 +185,15 @@ const Workspace = () => {
           const files = await getRoomFiles(room.id);
           setRoomFiles(files);
           setActiveFileId(uploaded.id);
+          setActiveFileUpdatedAt(uploaded.updatedAt);
           setActiveFileName(uploaded.filePath);
           setCode(uploaded.content || "");
+          lastSyncedCodeRef.current = uploaded.content || "";
           const history = await getFileVersions(room.id, uploaded.id);
           setVersions(history);
           toast.success(`Uploaded ${uploaded.filePath}`);
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Upload failed";
-          toast.error(message);
+          toast.error(getUserFriendlyErrorMessage(error, "Upload failed"));
         } finally {
           if (fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -221,8 +229,7 @@ const Workspace = () => {
         toast.success("Version saved");
         return;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to save version";
-        toast.error(message);
+        toast.error(getUserFriendlyErrorMessage(error, "Unable to save version"));
         return;
       }
     }
@@ -240,12 +247,13 @@ const Workspace = () => {
       setLoadingVersions(true);
       const history = await getFileVersions(room.id, fileId);
       setActiveFileId(file.id);
+      setActiveFileUpdatedAt(file.updatedAt);
       setActiveFileName(file.filePath);
       setCode(file.content || "");
+      lastSyncedCodeRef.current = file.content || "";
       setVersions(history);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to open file";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to open file"));
     } finally {
       setLoadingVersions(false);
     }
@@ -262,13 +270,14 @@ const Workspace = () => {
       const files = await getRoomFiles(room.id);
       setRoomFiles(files);
       setActiveFileId(created.id);
+      setActiveFileUpdatedAt(created.updatedAt);
       setActiveFileName(created.filePath);
       setCode(created.content || "");
+      lastSyncedCodeRef.current = created.content || "";
       setVersions([]);
       toast.success(`Created ${created.filePath}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to create file";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to create file"));
     }
   };
 
@@ -278,8 +287,7 @@ const Workspace = () => {
       toast.success(`Joined room ${joined.roomCode}`);
       navigate(`/workspace/${joined.roomCode}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to join room";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to join room"));
     }
   };
 
@@ -294,8 +302,28 @@ const Workspace = () => {
       setRoomMembers(members);
       toast.success("Member added");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to add member";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to add member"));
+    }
+  };
+
+  const handleUpdateMemberPermissions = async (
+    memberUserId: number,
+    permissions: {
+      canEditFiles?: boolean;
+      canSaveVersions?: boolean;
+      canRevertVersions?: boolean;
+    }
+  ) => {
+    if (!room) {
+      return;
+    }
+
+    try {
+      const updated = await updateRoomMemberPermissions(room.id, memberUserId, permissions);
+      setRoomMembers((prev) => prev.map((member) => (member.id === updated.id ? updated : member)));
+      toast.success("Member permissions updated");
+    } catch (error) {
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to update member permissions"));
     }
   };
 
@@ -307,21 +335,57 @@ const Workspace = () => {
     try {
       const reverted = await revertFileVersion(room.id, activeFileId, versionId);
       setCode(reverted.content || "");
+      lastSyncedCodeRef.current = reverted.content || "";
       const files = await getRoomFiles(room.id);
       const history = await getFileVersions(room.id, activeFileId);
       setRoomFiles(files);
       setVersions(history);
+      const refreshed = await getRoomFile(room.id, activeFileId);
+      setActiveFileUpdatedAt(refreshed.updatedAt);
       toast.success(`Reverted to v${reverted.revertedFromVersion}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to revert version";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to revert version"));
     }
   };
 
   const canManageMembers = Boolean(room && user.email === room.ownerEmail);
+  const currentUserMembership = roomMembers.find((member) => member.email.toLowerCase() === user.email.toLowerCase());
+  const canSaveVersions = isStandalone || canManageMembers || Boolean(currentUserMembership?.canSaveVersions);
+  const canRevertVersions = isStandalone || canManageMembers || Boolean(currentUserMembership?.canRevertVersions);
   const visibleMembers = isStandalone
-    ? [{ id: 0, name: user.name, email: user.email, joinedAt: new Date().toISOString(), owner: true }]
+    ? [{
+        id: 0,
+        name: user.name,
+        email: user.email,
+        joinedAt: new Date().toISOString(),
+        owner: true,
+        canEditFiles: true,
+        canSaveVersions: true,
+        canRevertVersions: true,
+      }]
     : roomMembers;
+
+  useEffect(() => {
+    if (isStandalone || !room || !activeFileId || !activeFileUpdatedAt) {
+      return;
+    }
+
+    if (code === lastSyncedCodeRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const saved = await saveRoomFile(room.id, activeFileId, code, activeFileUpdatedAt, activeFileName);
+        setActiveFileUpdatedAt(saved.updatedAt);
+        lastSyncedCodeRef.current = saved.content || "";
+      } catch (error) {
+        toast.error(getUserFriendlyErrorMessage(error, "Unable to sync file changes"));
+      }
+    }, 1200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isStandalone, room, activeFileId, activeFileUpdatedAt, code, activeFileName]);
 
   if (loadingRoom) {
     return (
@@ -385,9 +449,12 @@ const Workspace = () => {
           loadingVersions={loadingVersions}
           activeFileId={activeFileId}
           canManageMembers={canManageMembers}
+          canSaveVersions={canSaveVersions}
+          canRevertVersions={canRevertVersions}
           onSaveVersion={handleSaveVersion}
           onJoinRoom={handleJoinRoom}
           onAddMember={handleAddMember}
+          onUpdateMemberPermissions={handleUpdateMemberPermissions}
           onSelectFile={handleSelectFile}
           onCreateFile={handleCreateFile}
           onRevertVersion={handleRevertVersion}

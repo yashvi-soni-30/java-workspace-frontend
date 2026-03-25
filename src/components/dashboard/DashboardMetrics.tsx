@@ -1,25 +1,58 @@
-import { dashboardStats, analysisResults, issuesList, versionHistory } from "@/data/mockData";
-import { Layers, BarChart3, TrendingUp, Users, AlertCircle, GitBranch } from "lucide-react";
+import { Activity, BarChart3, FileCode2, FolderKanban, GitBranch, ShieldAlert } from "lucide-react";
+import type { DashboardPerformance, DashboardTotals } from "@/types/workspace.types";
 
-const metrics = [
-  { label: "Workspaces", value: dashboardStats.totalWorkspaces, icon: Layers, color: "text-primary" },
-  { label: "Analyses", value: dashboardStats.totalAnalyses, icon: BarChart3, color: "text-accent" },
-  { label: "Improvements", value: dashboardStats.performanceImprovements, icon: TrendingUp, color: "text-primary" },
-  { label: "Collaborators", value: dashboardStats.activeCollaborations, icon: Users, color: "text-warning" },
-];
+interface DashboardMetricsProps {
+  totals: DashboardTotals;
+  performance: DashboardPerformance;
+}
 
-const DashboardMetrics = () => {
+const DashboardMetrics = ({ totals, performance }: DashboardMetricsProps) => {
+  const metrics = [
+    { label: "Rooms", value: totals.rooms, icon: FolderKanban, color: "text-primary" },
+    { label: "Files", value: totals.files, icon: FileCode2, color: "text-accent" },
+    { label: "Versions", value: totals.versions, icon: GitBranch, color: "text-warning" },
+    { label: "Analyses", value: totals.analyses, icon: BarChart3, color: "text-primary" },
+  ];
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {metrics.map((m) => (
-        <div key={m.label} className="stat-card">
-          <div className="flex items-center justify-between mb-2">
-            <m.icon className={`h-5 w-5 ${m.color}`} />
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {metrics.map((m) => (
+          <div key={m.label} className="stat-card">
+            <div className="flex items-center justify-between mb-2">
+              <m.icon className={`h-5 w-5 ${m.color}`} />
+            </div>
+            <p className="text-2xl font-bold text-foreground">{m.value}</p>
+            <p className="text-xs text-muted-foreground mt-1">{m.label}</p>
           </div>
-          <p className="text-2xl font-bold text-foreground">{m.value}</p>
-          <p className="text-xs text-muted-foreground mt-1">{m.label}</p>
+        ))}
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <Activity className="h-5 w-5 text-primary" />
+          </div>
+          <p className="text-2xl font-bold text-foreground">{performance.averageScore}</p>
+          <p className="text-xs text-muted-foreground mt-1">Average Performance</p>
         </div>
-      ))}
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <BarChart3 className="h-5 w-5 text-accent" />
+          </div>
+          <p className="text-2xl font-bold text-foreground">{performance.bestScore}</p>
+          <p className="text-xs text-muted-foreground mt-1">Best Performance</p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between mb-2">
+            <ShieldAlert className="h-5 w-5 text-warning" />
+          </div>
+          <p className="text-2xl font-bold text-foreground">{performance.latestRiskLevel}</p>
+          <p className="text-xs text-muted-foreground mt-1">Latest Risk Level</p>
+        </div>
+      </div>
     </div>
   );
 };

@@ -5,15 +5,18 @@ import Navbar from "@/components/layout/Navbar";
 import DashboardMetrics from "@/components/dashboard/DashboardMetrics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ExternalLink, Plus, Users } from "lucide-react";
+import { Activity, ExternalLink, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { createRoom, getMyRooms, joinRoom } from "@/api/workspaceApi";
-import type { RoomSummary } from "@/types/workspace.types";
+import { getDashboardSummary } from "@/api/dashboardApi";
+import type { DashboardSummary, RoomSummary } from "@/types/workspace.types";
+import { getUserFriendlyErrorMessage } from "@/hooks/useToast";
 
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [newRoomName, setNewRoomName] = useState("");
   const [joinRoomCode, setJoinRoomCode] = useState("");
@@ -24,11 +27,11 @@ const Dashboard = () => {
   const loadRooms = async () => {
     setLoadingRooms(true);
     try {
-      const response = await getMyRooms();
-      setRooms(response);
+      const [roomsResponse, dashboardResponse] = await Promise.all([getMyRooms(), getDashboardSummary()]);
+      setRooms(roomsResponse);
+      setDashboard(dashboardResponse);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load rooms";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to load rooms"));
     } finally {
       setLoadingRooms(false);
     }
@@ -51,8 +54,7 @@ const Dashboard = () => {
       setNewRoomName("");
       navigate(`/workspace/${room.roomCode}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to create room";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to create room"));
     } finally {
       setSaving(false);
     }
@@ -71,8 +73,7 @@ const Dashboard = () => {
       setJoinRoomCode("");
       navigate(`/workspace/${room.roomCode}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to join room";
-      toast.error(message);
+      toast.error(getUserFriendlyErrorMessage(error, "Unable to join room"));
     } finally {
       setSaving(false);
     }
@@ -130,7 +131,47 @@ const Dashboard = () => {
         </div>
 
         <div className="animate-slide-up" style={{ animationDelay: "100ms" }}>
-          <DashboardMetrics />
+          <DashboardMetrics
+            totals={
+              dashboard?.totals ?? {
+                rooms: rooms.length,
+                files: 0,
+                versions: 0,
+                analyses: 0,
+              }
+            }
+            performance={
+              dashboard?.performance ?? {
+                averageScore: 0,
+                bestScore: 0,
+                latestRiskLevel: "UNKNOWN",
+              }
+            }
+          />
+        </div>
+
+        <div className="mt-8 animate-slide-up" style={{ animationDelay: "160ms" }}>
+          <h2 className="text-lg font-semibold text-foreground mb-4">Recent Activity</h2>
+          <div className="space-y-2">
+            {dashboard?.recentActivity?.length ? (
+              dashboard.recentActivity.slice(0, 8).map((entry, index) => (
+                <div key={`${entry.type}-${entry.createdAt}-${index}`} className="stat-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{entry.title}</p>
+                      <p className="text-xs text-muted-foreground truncate mt-1">{entry.description}</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <Activity className="h-3 w-3" />
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground">No recent activity yet.</div>
+            )}
+          </div>
         </div>
 
         <div className="mt-8 animate-slide-up" style={{ animationDelay: "200ms" }}>

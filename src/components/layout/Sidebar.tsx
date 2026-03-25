@@ -14,9 +14,19 @@ interface SidebarProps {
   loadingVersions?: boolean;
   activeFileId?: number | null;
   canManageMembers: boolean;
+  canSaveVersions: boolean;
+  canRevertVersions: boolean;
   onSaveVersion: () => Promise<void>;
   onJoinRoom: (roomCode: string) => Promise<void>;
   onAddMember: (email: string) => Promise<void>;
+  onUpdateMemberPermissions: (
+    memberUserId: number,
+    permissions: {
+      canEditFiles?: boolean;
+      canSaveVersions?: boolean;
+      canRevertVersions?: boolean;
+    }
+  ) => Promise<void>;
   onSelectFile: (fileId: number) => Promise<void>;
   onCreateFile: (filePath: string) => Promise<void>;
   onRevertVersion: (versionId: number) => Promise<void>;
@@ -31,9 +41,12 @@ const Sidebar = ({
   loadingVersions = false,
   activeFileId,
   canManageMembers,
+  canSaveVersions,
+  canRevertVersions,
   onSaveVersion,
   onJoinRoom,
   onAddMember,
+  onUpdateMemberPermissions,
   onSelectFile,
   onCreateFile,
   onRevertVersion,
@@ -91,9 +104,48 @@ const Sidebar = ({
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Members</h3>
         <div className="space-y-1.5 mb-2 max-h-28 overflow-y-auto">
           {roomMembers.map((member) => (
-            <div key={member.id} className="text-[11px] text-foreground flex items-center justify-between gap-2">
-              <span className="truncate">{member.name}</span>
-              <span className="text-[10px] text-muted-foreground">{member.owner ? "owner" : "member"}</span>
+            <div key={member.id} className="text-[11px] text-foreground space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{member.name}</span>
+                <span className="text-[10px] text-muted-foreground">{member.owner ? "owner" : "member"}</span>
+              </div>
+              {canManageMembers && !member.owner && (
+                <div className="flex flex-wrap gap-1">
+                  <Button
+                    type="button"
+                    variant={member.canEditFiles ? "default" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() =>
+                      void onUpdateMemberPermissions(member.id, { canEditFiles: !member.canEditFiles })
+                    }
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={member.canSaveVersions ? "default" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() =>
+                      void onUpdateMemberPermissions(member.id, { canSaveVersions: !member.canSaveVersions })
+                    }
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={member.canRevertVersions ? "default" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    onClick={() =>
+                      void onUpdateMemberPermissions(member.id, { canRevertVersions: !member.canRevertVersions })
+                    }
+                  >
+                    Revert
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -141,7 +193,7 @@ const Sidebar = ({
       {/* Version Control */}
       <div className="p-3 border-b border-border">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Version Control</h3>
-        <Button size="sm" className="w-full h-8 text-xs gap-1.5" onClick={onSaveVersion}>
+        <Button size="sm" className="w-full h-8 text-xs gap-1.5" onClick={onSaveVersion} disabled={!canSaveVersions}>
           <Save className="h-3 w-3" /> Save Version
         </Button>
       </div>
@@ -149,7 +201,12 @@ const Sidebar = ({
       {/* Version History */}
       <div className="flex-1 overflow-y-auto p-3">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">History</h3>
-        <VersionHistory versions={versions} loading={loadingVersions} onRevert={onRevertVersion} />
+        <VersionHistory
+          versions={versions}
+          loading={loadingVersions}
+          onRevert={onRevertVersion}
+          canRevert={canRevertVersions}
+        />
       </div>
     </aside>
   );

@@ -3,14 +3,47 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { versionHistory as mockVersions } from "@/data/mockData";
 import { GitBranch, Save, RotateCcw, Hash } from "lucide-react";
+import type { RoomFile, RoomMember } from "@/types/workspace.types";
 
 interface SidebarProps {
-  roomId: string;
+  roomCode: string;
+  roomName: string;
+  roomMembers: RoomMember[];
+  roomFiles: RoomFile[];
+  canManageMembers: boolean;
   onSaveVersion: () => void;
+  onJoinRoom: (roomCode: string) => Promise<void>;
+  onAddMember: (email: string) => Promise<void>;
 }
 
-const Sidebar = ({ roomId, onSaveVersion }: SidebarProps) => {
+const Sidebar = ({
+  roomCode,
+  roomName,
+  roomMembers,
+  roomFiles,
+  canManageMembers,
+  onSaveVersion,
+  onJoinRoom,
+  onAddMember,
+}: SidebarProps) => {
   const [joinRoom, setJoinRoom] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+
+  const handleJoin = async () => {
+    if (!joinRoom.trim()) {
+      return;
+    }
+    await onJoinRoom(joinRoom.trim());
+    setJoinRoom("");
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) {
+      return;
+    }
+    await onAddMember(inviteEmail.trim());
+    setInviteEmail("");
+  };
 
   return (
     <aside className="w-64 workspace-panel flex flex-col overflow-hidden shrink-0">
@@ -19,20 +52,53 @@ const Sidebar = ({ roomId, onSaveVersion }: SidebarProps) => {
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Room Info</h3>
         <div className="flex items-center gap-2 bg-surface rounded-md px-2 py-1.5 mb-2">
           <Hash className="h-3 w-3 text-muted-foreground" />
-          <span className="text-xs font-mono text-foreground truncate">{roomId}</span>
+          <span className="text-xs font-mono text-foreground truncate">{roomCode}</span>
         </div>
+        <p className="text-xs text-foreground font-medium mb-2 truncate">{roomName}</p>
         <div className="flex gap-1.5">
           <Input
-            placeholder="Room ID..."
+            placeholder="Room code..."
             value={joinRoom}
             onChange={(e) => setJoinRoom(e.target.value)}
             className="h-7 text-xs bg-surface border-border"
           />
-          <Button size="sm" className="h-7 text-xs px-2 shrink-0">Join</Button>
+          <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleJoin}>Join</Button>
         </div>
-        <Button variant="outline" size="sm" className="w-full mt-2 h-7 text-xs">
-          Create Room
-        </Button>
+      </div>
+
+      <div className="p-3 border-b border-border">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Members</h3>
+        <div className="space-y-1.5 mb-2 max-h-28 overflow-y-auto">
+          {roomMembers.map((member) => (
+            <div key={member.id} className="text-[11px] text-foreground flex items-center justify-between gap-2">
+              <span className="truncate">{member.name}</span>
+              <span className="text-[10px] text-muted-foreground">{member.owner ? "owner" : "member"}</span>
+            </div>
+          ))}
+        </div>
+        {canManageMembers && (
+          <div className="flex gap-1.5">
+            <Input
+              placeholder="Add by email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className="h-7 text-xs bg-surface border-border"
+            />
+            <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleInvite}>Add</Button>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 border-b border-border">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active Files</h3>
+        <div className="space-y-1.5 max-h-24 overflow-y-auto">
+          {roomFiles.length === 0 && <p className="text-[11px] text-muted-foreground">No files yet</p>}
+          {roomFiles.map((file) => (
+            <div key={file.id} className="text-[11px] text-foreground truncate">
+              {file.filePath}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Version Control */}

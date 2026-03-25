@@ -49,7 +49,7 @@ export interface WorkspaceReviewResult {
   issues: WorkspaceIssue[];
 }
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8081";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export async function analyzeJavaWorkspace(code: string, roomId: string): Promise<WorkspaceReviewResult> {
   const response = await fetch(`${API_BASE_URL}/api/v1/analyzer/java/full`, {

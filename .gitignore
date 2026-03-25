@@ -34,4 +34,6 @@ backend-dev.err.log
 *.sw?
 node_modules/
 .env
+.env.*
+!.env.example
 build/

@@ -1,27 +1,68 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
 import EditorPanel from "@/components/workspace/EditorPanel";
 import AnalysisPanel from "@/components/workspace/AnalysisPanel";
 import IssuesPanel from "@/components/workspace/IssuesPanel";
 import LearningPanel from "@/components/workspace/LearningPanel";
-import { analysisResults, defaultJavaCode, activeUsers, issuesList } from "@/data/mockData";
+import { analysisResults, defaultJavaCode, issuesList } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, Upload, Zap, Hash, Users } from "lucide-react";
 import { toast } from "sonner";
 import { analyzeJavaWorkspace } from "@/lib/javaAnalysisApi";
+import { addRoomMember, getRoomByCode, getRoomFiles, getRoomMembers, joinRoom } from "@/api/workspaceApi";
+import type { RoomFile, RoomMember, RoomSummary } from "@/types/workspace.types";
+import { useAuth } from "@/hooks/useAuth";
 
 const Workspace = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { roomId } = useParams();
   const [code, setCode] = useState(defaultJavaCode);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState(analysisResults);
   const [issues, setIssues] = useState(issuesList);
   const [backendAvailable, setBackendAvailable] = useState(true);
+  const [room, setRoom] = useState<RoomSummary | null>(null);
+  const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
+  const [roomFiles, setRoomFiles] = useState<RoomFile[]>([]);
+  const [loadingRoom, setLoadingRoom] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const loadRoomContext = async (codeValue: string) => {
+    setLoadingRoom(true);
+    try {
+      const roomDetails = await getRoomByCode(codeValue);
+      const [members, files] = await Promise.all([
+        getRoomMembers(roomDetails.id),
+        getRoomFiles(roomDetails.id),
+      ]);
+      setRoom(roomDetails);
+      setRoomMembers(members);
+      setRoomFiles(files);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load room";
+      toast.error(message);
+      navigate("/dashboard");
+    } finally {
+      setLoadingRoom(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!roomId) {
+      navigate("/dashboard");
+      return;
+    }
+    void loadRoomContext(roomId);
+  }, [roomId]);
 
   const handleAnalyze = async () => {
     setAnalyzing(true);
@@ -45,7 +86,7 @@ const Workspace = () => {
   useEffect(() => {
     const timeoutId = window.setTimeout(async () => {
       try {
-        const result = await analyzeJavaWorkspace(code, roomId || "demo");
+        const result = await analyzeJavaWorkspace(code, roomId || "workspace");
         setAnalysis(result.analysis);
         setIssues(result.issues);
         setBackendAvailable(true);
@@ -84,29 +125,66 @@ const Workspace = () => {
     toast.success("Version saved!");
   };
 
+  const handleJoinRoom = async (roomCode: string) => {
+    try {
+      const joined = await joinRoom(roomCode);
+      toast.success(`Joined room ${joined.roomCode}`);
+      navigate(`/workspace/${joined.roomCode}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to join room";
+      toast.error(message);
+    }
+  };
+
+  const handleAddMember = async (memberEmail: string) => {
+    if (!room) {
+      return;
+    }
+
+    try {
+      await addRoomMember(room.id, memberEmail);
+      const members = await getRoomMembers(room.id);
+      setRoomMembers(members);
+      toast.success("Member added");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to add member";
+      toast.error(message);
+    }
+  };
+
+  const canManageMembers = Boolean(room && user.email === room.ownerEmail);
+
+  if (loadingRoom) {
+    return (
+      <div className="h-screen grid place-items-center bg-background text-muted-foreground text-sm">
+        Loading room...
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       <Navbar>
         <div className="flex items-center gap-2 ml-2">
           <div className="flex items-center gap-1.5 bg-surface rounded-md px-2 py-1">
             <Hash className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs font-mono text-foreground">{roomId}</span>
+            <span className="text-xs font-mono text-foreground">{room?.roomCode}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-surface rounded-md px-2 py-1">
             <Users className="h-3 w-3 text-primary" />
             <div className="flex -space-x-1.5">
-              {activeUsers.map((u) => (
+              {roomMembers.slice(0, 5).map((member, idx) => (
                 <div
-                  key={u.id}
+                  key={member.id}
                   className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2 border-card"
-                  style={{ backgroundColor: u.color, color: "#fff" }}
-                  title={u.name}
+                  style={{ backgroundColor: ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7"][idx % 5], color: "#fff" }}
+                  title={member.name}
                 >
-                  {u.avatar.charAt(0)}
+                  {member.name.charAt(0).toUpperCase()}
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-muted-foreground">{activeUsers.length} online</span>
+            <span className="text-[10px] text-muted-foreground">{roomMembers.length} members</span>
           </div>
         </div>
         <div className="flex-1" />
@@ -129,7 +207,16 @@ const Workspace = () => {
       </Navbar>
 
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar roomId={roomId || "demo"} onSaveVersion={handleSaveVersion} />
+        <Sidebar
+          roomCode={room?.roomCode || roomId || "workspace"}
+          roomName={room?.roomName || "Workspace"}
+          roomMembers={roomMembers}
+          roomFiles={roomFiles}
+          canManageMembers={canManageMembers}
+          onSaveVersion={handleSaveVersion}
+          onJoinRoom={handleJoinRoom}
+          onAddMember={handleAddMember}
+        />
         <EditorPanel code={code} onChange={setCode} issues={issues} />
 
         <div className="w-80 workspace-panel flex flex-col overflow-hidden shrink-0">

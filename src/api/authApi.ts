@@ -23,6 +23,11 @@ interface SignupPayload {
 	password: string;
 }
 
+interface UpdateMePayload {
+	name?: string;
+	password?: string;
+}
+
 export async function loginApi(payload: LoginPayload): Promise<AuthResponse> {
 	return apiJson<AuthResponse>("/api/auth/login", {
 		method: "POST",
@@ -48,4 +53,22 @@ export async function meApi(token: string): Promise<AuthUser> {
 		},
 	});
 	return { name: data.name, email: data.email };
+}
+
+export async function updateMeApi(payload: UpdateMePayload): Promise<AuthUser> {
+	const data = await apiJson<AuthResponse>("/api/auth/me", {
+		method: "PUT",
+		headers: authJsonHeaders(),
+		body: JSON.stringify(payload),
+		auth: false,
+	});
+	return { name: data.name, email: data.email };
+}
+
+export async function deleteMeApi(): Promise<void> {
+	await apiJson<void>("/api/auth/me", {
+		method: "DELETE",
+		headers: authJsonHeaders(),
+		auth: false,
+	});
 }

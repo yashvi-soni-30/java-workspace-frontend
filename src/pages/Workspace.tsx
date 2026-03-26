@@ -494,7 +494,10 @@ const Workspace = () => {
     }
   };
 
-  const canManageMembers = Boolean(room && user.email === room.ownerEmail);
+  const canManageMembers = Boolean(
+    room &&
+    user.email.trim().toLowerCase() === String(room.ownerEmail ?? "").trim().toLowerCase()
+  );
   const currentUserMembership = roomMembers.find((member) => member.email.toLowerCase() === user.email.toLowerCase());
   const canSaveVersions = isStandalone || canManageMembers || Boolean(currentUserMembership?.canSaveVersions);
   const canRevertVersions = isStandalone || canManageMembers || Boolean(currentUserMembership?.canRevertVersions);
@@ -805,10 +808,12 @@ const Workspace = () => {
           roomCode={isStandalone ? "STANDALONE" : room?.roomCode || roomId || "workspace"}
           roomName={isStandalone ? "Personal Workspace" : room?.roomName || "Workspace"}
           roomMembers={roomMembers}
+          activeUsers={activeUsers}
           roomFiles={roomFiles}
           versions={versions}
           loadingVersions={loadingVersions}
           activeFileId={activeFileId}
+          activeFilePath={activeFileName}
           canManageMembers={canManageMembers}
           canSaveVersions={canSaveVersions}
           canRevertVersions={canRevertVersions}

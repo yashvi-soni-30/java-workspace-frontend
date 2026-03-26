@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, Hash } from "lucide-react";
+import { Save, Hash, Folder, FolderOpen, FileText, ChevronDown, ChevronRight, FolderPlus, FilePlus2 } from "lucide-react";
 import type { RoomFile, RoomMember, VersionEntry } from "@/types/workspace.types";
 import VersionHistory from "@/components/workspace/VersionHistory";
 
@@ -9,10 +9,12 @@ interface SidebarProps {
   roomCode: string;
   roomName: string;
   roomMembers: RoomMember[];
+  activeUsers: Array<{ email: string }>;
   roomFiles: RoomFile[];
   versions: VersionEntry[];
   loadingVersions?: boolean;
   activeFileId?: number | null;
+  activeFilePath?: string;
   canManageMembers: boolean;
   canSaveVersions: boolean;
   canRevertVersions: boolean;
@@ -36,10 +38,12 @@ const Sidebar = ({
   roomCode,
   roomName,
   roomMembers,
+  activeUsers,
   roomFiles,
   versions,
   loadingVersions = false,
   activeFileId,
+  activeFilePath,
   canManageMembers,
   canSaveVersions,
   canRevertVersions,
@@ -54,6 +58,15 @@ const Sidebar = ({
   const [joinRoom, setJoinRoom] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [newFileName, setNewFileName] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({ "": true });
+  const [editingMemberId, setEditingMemberId] = useState<number | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState<{
+    canEditFiles: boolean;
+    canSaveVersions: boolean;
+    canRevertVersions: boolean;
+  } | null>(null);
 
   const handleJoin = async () => {
     if (!joinRoom.trim()) {
@@ -75,8 +88,106 @@ const Sidebar = ({
     if (!newFileName.trim()) {
       return;
     }
-    await onCreateFile(newFileName.trim());
+
+    const baseFileName = newFileName.trim();
+    const normalizedName = baseFileName.includes("/") ? baseFileName : `${baseFileName}`;
+    const fullPath = selectedFolder ? `${selectedFolder}/${normalizedName}` : normalizedName;
+
+    await onCreateFile(fullPath);
     setNewFileName("");
+  };
+
+  const normalizeFolderPath = (value: string) =>
+    value
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/^\/+|\/+$/g, "")
+      .replace(/\/+/g, "/");
+
+  const handleCreateFolder = () => {
+    const folder = normalizeFolderPath(newFolderName);
+    if (!folder) {
+      return;
+    }
+
+    setExpandedFolders((prev) => ({ ...prev, [folder]: true }));
+    setSelectedFolder(folder);
+    setNewFolderName("");
+  };
+
+  const toggleFolder = (folder: string) => {
+    setExpandedFolders((prev) => ({ ...prev, [folder]: !prev[folder] }));
+  };
+
+  const folderSet = new Set<string>([""]);
+  for (const file of roomFiles) {
+    const segments = file.filePath.split("/").filter(Boolean);
+    if (segments.length <= 1) {
+      continue;
+    }
+    let current = "";
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      current = current ? `${current}/${segments[i]}` : segments[i];
+      folderSet.add(current);
+    }
+  }
+  if (selectedFolder) {
+    folderSet.add(selectedFolder);
+  }
+
+  const folders = Array.from(folderSet).sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
+
+  const getParentFolder = (folder: string) => {
+    const idx = folder.lastIndexOf("/");
+    return idx === -1 ? "" : folder.slice(0, idx);
+  };
+
+  const getFolderDepth = (folder: string) => (folder ? folder.split("/").length : 0);
+
+  const getDisplayFolderName = (folder: string) => {
+    if (!folder) {
+      return "root";
+    }
+    const idx = folder.lastIndexOf("/");
+    return idx === -1 ? folder : folder.slice(idx + 1);
+  };
+
+  const filesByFolder = roomFiles.reduce<Record<string, RoomFile[]>>((acc, file) => {
+    const idx = file.filePath.lastIndexOf("/");
+    const folder = idx === -1 ? "" : file.filePath.slice(0, idx);
+    if (!acc[folder]) {
+      acc[folder] = [];
+    }
+    acc[folder].push(file);
+    return acc;
+  }, {});
+
+  const onlineEmails = new Set(activeUsers.map((user) => user.email.trim().toLowerCase()));
+
+  const startEditingMember = (member: RoomMember) => {
+    setEditingMemberId(member.id);
+    setPermissionDraft({
+      canEditFiles: member.canEditFiles,
+      canSaveVersions: member.canSaveVersions,
+      canRevertVersions: member.canRevertVersions,
+    });
+  };
+
+  const cancelEditingMember = () => {
+    setEditingMemberId(null);
+    setPermissionDraft(null);
+  };
+
+  const saveMemberPermissions = async (memberId: number) => {
+    if (!permissionDraft) {
+      return;
+    }
+    await onUpdateMemberPermissions(memberId, permissionDraft);
+    cancelEditingMember();
   };
 
   return (
@@ -107,43 +218,79 @@ const Sidebar = ({
             <div key={member.id} className="text-[11px] text-foreground space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate">{member.name}</span>
-                <span className="text-[10px] text-muted-foreground">{member.owner ? "owner" : "member"}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${onlineEmails.has(member.email.trim().toLowerCase()) ? "bg-green-500" : "bg-muted-foreground/50"}`} />
+                  <span className="text-[10px] text-muted-foreground">{onlineEmails.has(member.email.trim().toLowerCase()) ? "online" : "offline"}</span>
+                  <span className="text-[10px] text-muted-foreground">{member.owner ? "owner" : "member"}</span>
+                </div>
               </div>
               {canManageMembers && !member.owner && (
-                <div className="flex flex-wrap gap-1">
-                  <Button
-                    type="button"
-                    variant={member.canEditFiles ? "default" : "outline"}
-                    size="sm"
-                    className="h-6 px-2 text-[10px]"
-                    onClick={() =>
-                      void onUpdateMemberPermissions(member.id, { canEditFiles: !member.canEditFiles })
-                    }
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={member.canSaveVersions ? "default" : "outline"}
-                    size="sm"
-                    className="h-6 px-2 text-[10px]"
-                    onClick={() =>
-                      void onUpdateMemberPermissions(member.id, { canSaveVersions: !member.canSaveVersions })
-                    }
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={member.canRevertVersions ? "default" : "outline"}
-                    size="sm"
-                    className="h-6 px-2 text-[10px]"
-                    onClick={() =>
-                      void onUpdateMemberPermissions(member.id, { canRevertVersions: !member.canRevertVersions })
-                    }
-                  >
-                    Revert
-                  </Button>
+                <div className="space-y-1">
+                  {editingMemberId !== member.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() => startEditingMember(member)}
+                    >
+                      Edit settings
+                    </Button>
+                  )}
+
+                  {editingMemberId === member.id && permissionDraft && (
+                    <div className="rounded border border-border bg-surface p-2 space-y-1.5">
+                      <label className="flex items-center gap-1.5 text-[10px] text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={permissionDraft.canEditFiles}
+                          onChange={(e) =>
+                            setPermissionDraft((prev) => (prev ? { ...prev, canEditFiles: e.target.checked } : prev))
+                          }
+                        />
+                        Edit files
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[10px] text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={permissionDraft.canSaveVersions}
+                          onChange={(e) =>
+                            setPermissionDraft((prev) => (prev ? { ...prev, canSaveVersions: e.target.checked } : prev))
+                          }
+                        />
+                        Save versions
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[10px] text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={permissionDraft.canRevertVersions}
+                          onChange={(e) =>
+                            setPermissionDraft((prev) => (prev ? { ...prev, canRevertVersions: e.target.checked } : prev))
+                          }
+                        />
+                        Revert versions
+                      </label>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={() => void saveMemberPermissions(member.id)}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={cancelEditingMember}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -163,30 +310,88 @@ const Sidebar = ({
       </div>
 
       <div className="p-3 border-b border-border">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Active Files</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Files</h3>
+        <p className="text-[10px] text-muted-foreground mb-2 truncate">
+          Active: <span className="text-foreground font-mono">{activeFilePath || "none"}</span>
+        </p>
+
+        <div className="flex gap-1.5 mb-1.5">
+          <Input
+            placeholder="New folder, e.g. services/core"
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            className="h-7 text-xs bg-surface border-border"
+          />
+          <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleCreateFolder}>
+            <FolderPlus className="h-3 w-3" />
+          </Button>
+        </div>
+
         <div className="flex gap-1.5 mb-2">
           <Input
-            placeholder="New file, e.g. Utils.java"
+            placeholder={selectedFolder ? `New file in ${selectedFolder}` : "New file, e.g. Utils.java"}
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             className="h-7 text-xs bg-surface border-border"
           />
-          <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleCreateFile}>New</Button>
+          <Button size="sm" className="h-7 text-xs px-2 shrink-0" onClick={handleCreateFile}>
+            <FilePlus2 className="h-3 w-3" />
+          </Button>
         </div>
-        <div className="space-y-1.5 max-h-24 overflow-y-auto">
-          {roomFiles.length === 0 && <p className="text-[11px] text-muted-foreground">No files yet</p>}
-          {roomFiles.map((file) => (
-            <button
-              key={file.id}
-              className={`w-full text-left text-[11px] truncate rounded px-1 py-0.5 transition-colors ${
-                activeFileId === file.id ? "bg-primary/15 text-primary" : "text-foreground hover:bg-surface"
-              }`}
-              onClick={() => void onSelectFile(file.id)}
-              type="button"
-            >
-              {file.filePath}
-            </button>
-          ))}
+
+        <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+          {folders.map((folder) => {
+            const parent = getParentFolder(folder);
+            if (folder !== "" && !expandedFolders[parent]) {
+              return null;
+            }
+
+            const isExpanded = folder === "" ? true : Boolean(expandedFolders[folder]);
+            const depth = getFolderDepth(folder);
+            const folderFiles = (filesByFolder[folder] || []).sort((a, b) => a.filePath.localeCompare(b.filePath));
+
+            return (
+              <div key={folder || "root-folder"}>
+                <button
+                  type="button"
+                  className={`w-full text-left text-[11px] rounded px-1 py-1 flex items-center gap-1 ${
+                    selectedFolder === folder ? "bg-primary/15 text-primary" : "text-foreground hover:bg-surface"
+                  }`}
+                  style={{ paddingLeft: `${4 + depth * 10}px` }}
+                  onClick={() => {
+                    setSelectedFolder(folder);
+                    if (folder !== "") {
+                      toggleFolder(folder);
+                    }
+                  }}
+                >
+                  {folder !== "" ? (isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />) : <span className="w-3" />}
+                  {isExpanded ? <FolderOpen className="h-3 w-3" /> : <Folder className="h-3 w-3" />}
+                  <span className="truncate">{getDisplayFolderName(folder)}</span>
+                </button>
+
+                {isExpanded && folderFiles.map((file) => {
+                  const fileName = file.filePath.includes("/") ? file.filePath.slice(file.filePath.lastIndexOf("/") + 1) : file.filePath;
+                  return (
+                    <button
+                      key={file.id}
+                      type="button"
+                      className={`w-full text-left text-[11px] rounded px-1 py-0.5 flex items-center gap-1 ${
+                        activeFileId === file.id ? "bg-primary/15 text-primary" : "text-foreground hover:bg-surface"
+                      }`}
+                      style={{ paddingLeft: `${22 + depth * 10}px` }}
+                      onClick={() => void onSelectFile(file.id)}
+                    >
+                      <FileText className="h-3 w-3" />
+                      <span className="truncate">{fileName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {roomFiles.length === 0 && <p className="text-[11px] text-muted-foreground">No files yet. Create a folder and add a file.</p>}
         </div>
       </div>
 

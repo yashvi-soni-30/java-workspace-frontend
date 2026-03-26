@@ -6,6 +6,8 @@ interface WorkspaceRequestPayload {
   roomCode?: string;
   memberEmail?: string;
   filePath?: string;
+  folderPath?: string;
+  newFolderPath?: string;
   language?: string;
   content?: string;
   versionMessage?: string;
@@ -27,7 +29,7 @@ function authHeaders(): HeadersInit {
 
 async function workspaceRequest<T>(
   path: string,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   payload?: WorkspaceRequestPayload
 ): Promise<T> {
   return apiJson<T>(path, {
@@ -46,6 +48,14 @@ export function joinRoom(roomCode: string): Promise<RoomSummary> {
   return workspaceRequest<RoomSummary>("/api/workspaces/rooms/join", "POST", { roomCode });
 }
 
+export function updateRoom(roomId: number, roomName: string): Promise<RoomSummary> {
+  return workspaceRequest<RoomSummary>(`/api/workspaces/rooms/${roomId}`, "PUT", { roomName });
+}
+
+export function deleteRoom(roomId: number): Promise<{ status: string; roomId: number }> {
+  return workspaceRequest<{ status: string; roomId: number }>(`/api/workspaces/rooms/${roomId}`, "DELETE");
+}
+
 export function getMyRooms(): Promise<RoomSummary[]> {
   return workspaceRequest<RoomSummary[]>("/api/workspaces/rooms", "GET");
 }
@@ -60,6 +70,13 @@ export function getRoomMembers(roomId: number): Promise<RoomMember[]> {
 
 export function addRoomMember(roomId: number, memberEmail: string): Promise<RoomSummary> {
   return workspaceRequest<RoomSummary>(`/api/workspaces/rooms/${roomId}/members`, "POST", { memberEmail });
+}
+
+export function removeRoomMember(roomId: number, memberUserId: number): Promise<{ status: string; memberUserId: number }> {
+  return workspaceRequest<{ status: string; memberUserId: number }>(
+    `/api/workspaces/rooms/${roomId}/members/${memberUserId}`,
+    "DELETE"
+  );
 }
 
 export function updateRoomMemberPermissions(
@@ -107,6 +124,29 @@ export function saveRoomFile(
     language: "java",
     expectedUpdatedAt,
   });
+}
+
+export function deleteRoomFile(roomId: number, fileId: number): Promise<{ status: string; fileId: number }> {
+  return workspaceRequest<{ status: string; fileId: number }>(`/api/workspaces/rooms/${roomId}/files/${fileId}`, "DELETE");
+}
+
+export function listFolders(roomId: number): Promise<Array<{ path: string }>> {
+  return workspaceRequest<Array<{ path: string }>>(`/api/workspaces/rooms/${roomId}/folders`, "GET");
+}
+
+export function createFolder(roomId: number, folderPath: string): Promise<{ status: string; path: string }> {
+  return workspaceRequest<{ status: string; path: string }>(`/api/workspaces/rooms/${roomId}/folders`, "POST", { folderPath });
+}
+
+export function renameFolder(roomId: number, folderPath: string, newFolderPath: string): Promise<{ status: string; updated: number }> {
+  return workspaceRequest<{ status: string; updated: number }>(`/api/workspaces/rooms/${roomId}/folders`, "PUT", { folderPath, newFolderPath });
+}
+
+export function deleteFolder(roomId: number, folderPath: string): Promise<{ status: string; deleted: number }> {
+  return workspaceRequest<{ status: string; deleted: number }>(
+    `/api/workspaces/rooms/${roomId}/folders?folderPath=${encodeURIComponent(folderPath)}`,
+    "DELETE"
+  );
 }
 
 export async function uploadRoomJavaFile(roomId: number, file: File): Promise<RoomFileContent> {

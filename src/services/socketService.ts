@@ -34,6 +34,7 @@ export function connectRoomStream(roomId: number, handlers: SocketHandlers): () 
 	const eventNames = [
 		"CONNECTED",
 		"ACTIVE_USERS",
+		"CURSOR_UPDATE",
 		"ROOM_JOINED",
 		"MEMBER_ADDED",
 		"MEMBER_PERMISSIONS_UPDATED",

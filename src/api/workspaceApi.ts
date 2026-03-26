@@ -13,6 +13,12 @@ interface WorkspaceRequestPayload {
   canEditFiles?: boolean;
   canSaveVersions?: boolean;
   canRevertVersions?: boolean;
+  fileId?: number;
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+  typing?: boolean;
 }
 
 function authHeaders(): HeadersInit {
@@ -148,4 +154,18 @@ export function revertFileVersion(roomId: number, fileId: number, versionId: num
     `/api/workspaces/rooms/${roomId}/files/${fileId}/versions/${versionId}/revert`,
     "POST"
   );
+}
+
+export function publishRoomPresence(
+  roomId: number,
+  payload: {
+    fileId: number;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    typing?: boolean;
+  }
+): Promise<{ status: string }> {
+  return workspaceRequest<{ status: string }>(`/api/workspaces/rooms/${roomId}/presence`, "POST", payload);
 }

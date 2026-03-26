@@ -29,6 +29,7 @@ import {
   getRoomMembers,
   joinRoom,
   revertFileVersion,
+  publishRoomPresence,
   saveRoomFile,
   saveVersionSnapshot,
   updateRoomMemberPermissions,
@@ -38,6 +39,17 @@ import type { RoomActivity, RoomFile, RoomMember, RoomSummary, VersionEntry } fr
 import { useAuth } from "@/hooks/useAuth";
 import { buildDraftStorageKey, clearDraftSnapshot, isDraftNewerThanServer, loadDraftSnapshot, saveDraftSnapshot } from "@/utils/draftStorage";
 import type { RoomRealtimeEvent } from "@/services/socketService";
+
+type RemoteSelectionState = {
+  userLabel: string;
+  fileId: number;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+  typing: boolean;
+  updatedAt: number;
+};
 
 const Workspace = () => {
   const { user } = useAuth();
@@ -64,6 +76,14 @@ const Workspace = () => {
   const lastSyncedCodeRef = useRef(code);
   const codeRef = useRef(code);
   const analysisRequestSeq = useRef(0);
+  const typingResetTimerRef = useRef<number | null>(null);
+  const lastSelectionRef = useRef({
+    startLine: 1,
+    startColumn: 1,
+    endLine: 1,
+    endColumn: 1,
+  });
+  const [remoteSelections, setRemoteSelections] = useState<Record<string, RemoteSelectionState>>({});
 
   useEffect(() => {
     codeRef.current = code;
@@ -175,6 +195,7 @@ const Workspace = () => {
       setRoomFiles([]);
       setVersions([]);
       setRoomActivity([]);
+      setRemoteSelections({});
       setActiveFileId(null);
       setActiveFileUpdatedAt(null);
       setActiveFileName("DataProcessor.java");
@@ -498,6 +519,28 @@ const Workspace = () => {
     const actorEmail = String(event.payload?.actorEmail ?? "").toLowerCase();
     const isCurrentUserEvent = actorEmail && actorEmail === user.email.toLowerCase();
 
+    if (event.type === "CURSOR_UPDATE") {
+      const targetFileId = Number(event.payload?.fileId ?? -1);
+      if (!actorEmail || isCurrentUserEvent || !room) {
+        return;
+      }
+
+      setRemoteSelections((prev) => ({
+        ...prev,
+        [actorEmail]: {
+          userLabel: String(event.payload?.actorName ?? actorEmail),
+          fileId: targetFileId,
+          startLine: Number(event.payload?.startLine ?? 1),
+          startColumn: Number(event.payload?.startColumn ?? 1),
+          endLine: Number(event.payload?.endLine ?? 1),
+          endColumn: Number(event.payload?.endColumn ?? 1),
+          typing: Boolean(event.payload?.typing),
+          updatedAt: Date.now(),
+        },
+      }));
+      return;
+    }
+
     if ((event.type === "FILE_UPDATED" || event.type === "FILE_UPLOADED" || event.type === "VERSION_REVERTED") && !isCurrentUserEvent) {
       const fileId = Number(event.payload?.fileId ?? -1);
       const fileContent = typeof event.payload?.content === "string" ? event.payload.content : null;
@@ -550,6 +593,91 @@ const Workspace = () => {
     enabled: !isStandalone && Boolean(room),
     onEvent: handleRealtimeEvent,
   });
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const cutoff = Date.now() - 6000;
+      setRemoteSelections((prev) => {
+        const next: Record<string, RemoteSelectionState> = {};
+        for (const [email, selection] of Object.entries(prev)) {
+          if (selection.updatedAt > cutoff) {
+            next[email] = selection;
+          }
+        }
+        return next;
+      });
+    }, 2000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const publishSelection = useCallback((selection: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  }, typing: boolean) => {
+    if (!room || !activeFileId || isStandalone) {
+      return;
+    }
+
+    void publishRoomPresence(room.id, {
+      fileId: activeFileId,
+      startLine: selection.startLine,
+      startColumn: selection.startColumn,
+      endLine: selection.endLine,
+      endColumn: selection.endColumn,
+      typing,
+    }).catch(() => {
+      // Ignore transient realtime presence publish failures.
+    });
+  }, [room, activeFileId, isStandalone]);
+
+  const handleEditorSelectionChange = useCallback((selection: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  }) => {
+    lastSelectionRef.current = selection;
+    publishSelection(selection, false);
+  }, [publishSelection]);
+
+  const handleEditorCodeChange = useCallback((value: string) => {
+    setCode(value);
+    if (!room || !activeFileId || isStandalone) {
+      return;
+    }
+
+    const payload = lastSelectionRef.current;
+    publishSelection(payload, true);
+
+    if (typingResetTimerRef.current) {
+      window.clearTimeout(typingResetTimerRef.current);
+    }
+    typingResetTimerRef.current = window.setTimeout(() => {
+      publishSelection(payload, false);
+    }, 1200);
+  }, [room, activeFileId, isStandalone, publishSelection]);
+
+  const editorRemoteSelections = useMemo(() => {
+    if (!activeFileId) {
+      return [];
+    }
+    const palette = [0, 1, 2, 3, 4];
+    return Object.entries(remoteSelections)
+      .filter(([, selection]) => selection.fileId === activeFileId)
+      .map(([email, selection], index) => ({
+        key: email,
+        userLabel: selection.userLabel,
+        startLine: selection.startLine,
+        startColumn: selection.startColumn,
+        endLine: selection.endLine,
+        endColumn: selection.endColumn,
+        typing: selection.typing,
+        colorIndex: palette[index % palette.length],
+      }));
+  }, [remoteSelections, activeFileId]);
 
   const draftStorageKey = useMemo(() => buildDraftStorageKey({
     userEmail: user.email,
@@ -692,7 +820,14 @@ const Workspace = () => {
           onCreateFile={handleCreateFile}
           onRevertVersion={handleRevertVersion}
         />
-        <EditorPanel code={code} fileName={activeFileName} onChange={setCode} issues={issues} />
+        <EditorPanel
+          code={code}
+          fileName={activeFileName}
+          onChange={handleEditorCodeChange}
+          onSelectionChange={handleEditorSelectionChange}
+          remoteSelections={editorRemoteSelections}
+          issues={issues}
+        />
 
         <div className="w-80 workspace-panel flex flex-col overflow-hidden shrink-0">
           <Tabs defaultValue="analysis" className="flex flex-col h-full">

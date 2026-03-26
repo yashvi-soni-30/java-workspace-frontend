@@ -8,6 +8,22 @@ interface EditorPanelProps {
   fileName?: string;
   onChange: (value: string) => void;
   issues?: WorkspaceIssue[];
+  onSelectionChange?: (selection: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  }) => void;
+  remoteSelections?: Array<{
+    key: string;
+    userLabel: string;
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    colorIndex: number;
+    typing: boolean;
+  }>;
 }
 
 const markerSeverity = {
@@ -16,10 +32,18 @@ const markerSeverity = {
   low: 2,
 } as const;
 
-const EditorPanel = ({ code, fileName = "DataProcessor.java", onChange, issues = [] }: EditorPanelProps) => {
+const EditorPanel = ({
+  code,
+  fileName = "DataProcessor.java",
+  onChange,
+  issues = [],
+  onSelectionChange,
+  remoteSelections = [],
+}: EditorPanelProps) => {
   const { theme } = useTheme();
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const decorationIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (!editorRef.current || !monacoRef.current) {
@@ -44,9 +68,43 @@ const EditorPanel = ({ code, fileName = "DataProcessor.java", onChange, issues =
     monacoRef.current.editor.setModelMarkers(model, "java-workspace-issues", markers);
   }, [issues]);
 
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current) {
+      return;
+    }
+
+    const monaco = monacoRef.current;
+    const nextDecorations = remoteSelections.map((entry) => {
+      const startLine = Math.max(entry.startLine, 1);
+      const endLine = Math.max(entry.endLine, startLine);
+      const startColumn = Math.max(entry.startColumn, 1);
+      const endColumn = Math.max(entry.endColumn, startColumn + (startLine === endLine ? 0 : 1));
+
+      return {
+        range: new monaco.Range(startLine, startColumn, endLine, endColumn),
+        options: {
+          className: `remote-selection remote-selection-${entry.colorIndex}`,
+          hoverMessage: { value: `${entry.userLabel}${entry.typing ? " (typing...)" : ""}` },
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      };
+    });
+
+    decorationIdsRef.current = editorRef.current.deltaDecorations(decorationIdsRef.current, nextDecorations);
+  }, [remoteSelections]);
+
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    editor.onDidChangeCursorSelection((event) => {
+      onSelectionChange?.({
+        startLine: event.selection.startLineNumber,
+        startColumn: event.selection.startColumn,
+        endLine: event.selection.endLineNumber,
+        endColumn: event.selection.endColumn,
+      });
+    });
   };
 
   return (
@@ -58,6 +116,12 @@ const EditorPanel = ({ code, fileName = "DataProcessor.java", onChange, issues =
           <div className="w-2.5 h-2.5 rounded-full bg-primary/60" />
         </div>
         <span className="text-xs text-muted-foreground font-mono ml-2">{fileName}</span>
+        {remoteSelections.length > 0 && (
+          <span className="text-[10px] text-muted-foreground ml-auto">
+            {remoteSelections.filter((entry) => entry.typing).slice(0, 2).map((entry) => entry.userLabel).join(", ")}
+            {remoteSelections.some((entry) => entry.typing) ? " typing..." : " editing"}
+          </span>
+        )}
       </div>
       <div className="flex-1">
         <Editor

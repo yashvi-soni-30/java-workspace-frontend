@@ -40,3 +40,27 @@
 .read-the-docs {
   color: #888;
 }
+
+.remote-selection {
+  border-radius: 2px;
+}
+
+.remote-selection-0 {
+  background-color: rgba(239, 68, 68, 0.22);
+}
+
+.remote-selection-1 {
+  background-color: rgba(59, 130, 246, 0.22);
+}
+
+.remote-selection-2 {
+  background-color: rgba(34, 197, 94, 0.22);
+}
+
+.remote-selection-3 {
+  background-color: rgba(245, 158, 11, 0.22);
+}
+
+.remote-selection-4 {
+  background-color: rgba(168, 85, 247, 0.22);
+}
